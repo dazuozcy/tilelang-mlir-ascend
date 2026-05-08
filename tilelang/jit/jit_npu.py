@@ -567,9 +567,9 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
     ret = rtMalloc(reinterpret_cast<void **>(&workspace_addr),
                    totalWorkSpaceSize, RT_MEMORY_HBM, ModuleId);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
-    }}
+    //if (ret != RT_ERROR_NONE) {{
+    //  return {'ret' if enable_taskqueue else ''};
+    //}}
     '''
         if workspace_size > 0
         else ""
