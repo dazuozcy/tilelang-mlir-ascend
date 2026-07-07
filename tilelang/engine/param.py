@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import List, Union, Optional
 import torch
 from tilelang import tvm as tvm
-from tvm.tir import Buffer, IntImm, Var
+from tvm.tir import Buffer, IntImm, Var, PrimExpr
 from tilelang.utils.tensor import map_torch_type
 
 
@@ -17,7 +17,7 @@ class KernelParam:
     Used to describe tensor or scalar parameters in TVM/PyTorch interop.
     """
     dtype: torch.dtype  # PyTorch data type of the parameter
-    shape: List[Union[int, Var]]  # List of dimensions, can be integers or TVM variables
+    shape: List[Union[int, Var, PrimExpr]]  # List of dimensions, can be integers, TVM variables, or composite PrimExpr
 
     @classmethod
     def from_buffer(cls, buffer: Buffer):
@@ -29,19 +29,16 @@ class KernelParam:
             
         Returns:
             KernelParam instance with converted dtype and shape
-            
-        Raises:
-            ValueError: If dimension type is not supported (not IntImm or Var)
         """
         dtype = map_torch_type(buffer.dtype)
         shape = []
         for s in buffer.shape:
             if isinstance(s, IntImm):
                 shape.append(s.value)
-            elif isinstance(s, Var):
+            elif isinstance(s, (Var, PrimExpr)):
                 shape.append(s)
             else:
-                raise ValueError(f"Unsupported dimension type: {type(s)}")
+                shape.append(s)
         return cls(dtype, shape)
 
     @classmethod
