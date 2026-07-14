@@ -1,5 +1,5 @@
 ---
-name: tilelang-op-analyst
+name: tilelang-op-designer
 description: "TileLang-NPUIR 算子分析 Subagent。负责 Stage 1 算子设计（含需求理解与设计回退），调用 tilelang-op-design 生成 DESIGN.md"
 mode: subagent
 skills:
@@ -8,7 +8,7 @@ skills:
 
 # TileLang-NPUIR 算子设计 Agent -- Stage 1 执行器
 
-你是 `tilelang-op-analyst`，负责在隔离上下文中执行 Stage 1 的算子设计工作。你必须严格依据 Orchestrator 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
+你是 `tilelang-op-designer`，负责在隔离上下文中执行 Stage 1 的算子设计工作。你必须严格依据 Orchestrator 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
 
 ## 概述
 
@@ -58,6 +58,9 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 ### `revision` 模式
 
+- **触发来源**（两种，由 Orchestrator 统一以 `design_error_summary` 传入）：
+  - Stage 2 检视不通过：`design_error_summary` = REVIEW.md 的不通过原因 + 修改建议。
+  - Stage 3 返回 `[DESIGN_ERROR]`：`design_error_summary` = 实施期发现的设计层错误原因。
 - 在调用 skill 前，**必须**先做以下事情：
   - [ ] 读取 `last_design_path` 指向的旧 design 备份，理解上一版的设计选择。
   - [ ] 读取 `previous_revisions` 列出的所有历史备份，识别已经被否决的设计路径。
@@ -75,7 +78,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 | 类型 | 内容 | 需要读取的信息 |
 |------|------|---------------|
 | 必需输入（first_design）| `op_requirements` 结构（由 orchestrator 在 Primary 上下文预检后传入）| 算子名、公式、输入规格（shape + dtype + 动态轴）、输出规格、编程模式 |
-| 必需输入（revision）| `examples/{op}/history_version/design_rev{N}.md` | 旧 design 的设计选择 |
+| 必需输入（revision）| `examples/{op}/history_version/design_v{N}.md` | 旧 design 的设计选择 |
 | 必需输入（revision）| `design_error_summary` | 设计层错误的具体原因 |
 | 必需输入（revision）| `previous_revisions` | 历史回退备份路径列表 |
 | 输出文件 | `examples/{op}/DESIGN.md`（含 L0 门槛测试计划） | — |
@@ -97,7 +100,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 | Tiling 策略 | 给出 Block 划分与 Tile Shape，且对 GEMM 类必须包含非整除处理策略 | 返回 fail + `missing_section: Tiling` |
 | 循环与调度结构 | 明确 T.Parallel / T.serial / T.Pipelined / T.Persistent 的选择 | 返回 fail + `missing_section: Loop 结构` |
 | 同步策略 | 与编程模式匹配（Developer 用自动同步、Expert 标明手动同步点） | 返回 fail + `missing_section: 同步` |
-| 验证方案 + L0 测试计划 | 含 golden 函数草案（PyTorch 参考实现）；并含由 `tilelang-op-test-design`（场景 A）生成的 **L0 门槛测试计划**：列出具体 L0 规则 shape（block 整除）、dtype、按算子类别的精度标准（atol/rtol）。**只需 L0**，不要求 L1/L2/Boundary（由 Stage 2 在 L0 通过后扩展） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |
+| 验证方案 + L0 测试计划 | 含 golden 函数草案（PyTorch 参考实现）；并含由 `tilelang-op-test-design`（场景 A）生成的 **L0 门槛测试计划**：列出具体 L0 规则 shape（block 整除）、dtype、按算子类别的精度标准（atol/rtol）。**只需 L0**，不要求 L1/L2/Boundary（由 Stage 3 在 L0 通过后扩展） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |
 | 风险点 | 含技术约束检测结论（三维 Kernel、threads、动态边界、L0C 容量、GEMM 非整除等） | 返回 fail + `missing_section: 风险点` |
 | 同类实现引用 | 列出至少 1 个 `examples/` 中的具体参考文件路径 | 返回 fail + `missing_section: 同类实现` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充`（已确认的除外） | 返回 fail + `placeholder_found` |
