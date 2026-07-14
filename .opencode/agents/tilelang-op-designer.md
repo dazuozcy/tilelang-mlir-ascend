@@ -51,10 +51,10 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 ### `first_design` 模式
 
-- **前置假设**：orchestrator 已在 Primary 上下文完成「需求完备性预检」并把 5 个必需字段（算子名 / 公式 / 输入规格 / 输出规格 / 编程模式）作为 `op_requirements` 结构传给你。你**不需要、也不应该**再问用户这 5 个字段。
+- **前置假设**：conductor 已在 Primary 上下文完成「需求完备性预检」并把 5 个必需字段（算子名 / 公式 / 输入规格 / 输出规格 / 编程模式）作为 `op_requirements` 结构传给你。你**不需要、也不应该**再问用户这 5 个字段。
 - 直接调用 `tilelang-op-design`，**把 `op_requirements` 完整传入 skill 上下文**——skill 看到字段已齐全后跳过提问环节，直接进入技术约束检测和 design 生成。
 - skill 完成技术约束检测、同类 examples/ 检索后产出 `DESIGN.md`。
-- **若 skill 检测出歧义需要更多信息**（如内存预算超限要重选 block size），不要自己在 Subagent 上下文 AskUserQuestion——返回 `partial_input` + 缺失项给 orchestrator，由 orchestrator 在 Primary 上下文继续问用户。
+- **若 skill 检测出歧义需要更多信息**（如内存预算超限要重选 block size），不要自己在 Subagent 上下文 AskUserQuestion——返回 `partial_input` + 缺失项给 conductor，由 conductor 在 Primary 上下文继续问用户。
 
 ### `revision` 模式
 
@@ -77,7 +77,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 | 类型 | 内容 | 需要读取的信息 |
 |------|------|---------------|
-| 必需输入（first_design）| `op_requirements` 结构（由 orchestrator 在 Primary 上下文预检后传入）| 算子名、公式、输入规格（shape + dtype + 动态轴）、输出规格、编程模式 |
+| 必需输入（first_design）| `op_requirements` 结构（由 conductor 在 Primary 上下文预检后传入）| 算子名、公式、输入规格（shape + dtype + 动态轴）、输出规格、编程模式 |
 | 必需输入（revision）| `examples/{op}/history_version/design_v{N}.md` | 旧 design 的设计选择 |
 | 必需输入（revision）| `design_error_summary` | 设计层错误的具体原因 |
 | 必需输入（revision）| `previous_revisions` | 历史回退备份路径列表 |
@@ -125,7 +125,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 ### first_design 模式
 
-- [ ] 接收 orchestrator 传入的 `op_requirements` 结构，**确认 5 个必需字段齐全**（若缺失，立即返回 fail + `input_missing` 让 orchestrator 重新预检；不要在 Subagent 上下文问用户）。
+- [ ] 接收 conductor 传入的 `op_requirements` 结构，**确认 5 个必需字段齐全**（若缺失，立即返回 fail + `input_missing` 让 conductor 重新预检；不要在 Subagent 上下文问用户）。
 - [ ] 调用 `tilelang-op-design`，**把 `op_requirements` 完整作为 skill 输入**——skill 看到字段已齐跳过提问。
 - [ ] skill 内部执行技术约束检测、同类 examples/ 检索。
 - [ ] skill 生成 `DESIGN.md` 并写入算子目录。
@@ -150,7 +150,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 3. 不得写入全局状态、重试计数、BLOCKED / SUCCESS 等编排层信息。
 4. 若用户中途取消或输入缺失，必须如实返回，不得自行假设或编造需求。
 5. revision 模式下，新 design 不得与任何历史备份的关键选择完全一致（必须有可识别的差异化调整）。
-6. **不得在 Subagent 上下文调用 `AskUserQuestion` 直接问用户**——OpenCode 框架下 Subagent 的 AskUserQuestion 透传不到真实用户。若 skill 在 first_design 中发现 `op_requirements` 仍有歧义需要补问，返回 `partial_input` + 具体缺失字段，由 orchestrator 在 Primary 上下文向用户追问。
+6. **不得在 Subagent 上下文调用 `AskUserQuestion` 直接问用户**——OpenCode 框架下 Subagent 的 AskUserQuestion 透传不到真实用户。若 skill 在 first_design 中发现 `op_requirements` 仍有歧义需要补问，返回 `partial_input` + 具体缺失字段，由 conductor 在 Primary 上下文向用户追问。
 
 ---
 
