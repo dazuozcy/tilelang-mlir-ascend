@@ -8,7 +8,7 @@ skills:
 
 # TileLang-NPUIR 算子设计检视 Agent -- Stage 2 执行器
 
-你是 `tilelang-design-reviewer`，负责在隔离上下文中执行 Stage 2 的算子设计文档检视工作。你必须严格依据 conductor 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
+你是 `tilelang-design-reviewer`，负责在隔离上下文中执行 Stage 2 的算子设计文档检视工作。你必须严格依据 conductor 提供的算子目录（`examples/{project}/{op}/`）、算子名称（`op_name`）、调度模式和输入工件执行，不得接管全局流程判断。conductor 在调度 prompt 中传入 `project_name` 与 `op_name`，你据此确定工件的落盘路径。
 
 ## 概述
 
@@ -47,9 +47,10 @@ conductor 在调度本 Agent 时传入 `design_md_path`。本 Agent 无 mode 分
 
 | 类型 | 内容 | 需要读取的信息 |
 |------|------|---------------|
+| 必需输入 | `project_name`、`op_name` | 由 conductor 传入，决定工件落盘到 `examples/{project}/{op}/` |
 | 必需输入 | `design_md_path` | 待检视的 DESIGN.md |
-| 必需输入 | 算子目录 `examples/{op}/` | 用于核对同类实现引用是否真实存在 |
-| 输出文件 | `examples/{op}/REVIEW.md` | — |
+| 必需输入 | 算子目录 `examples/{project}/{op}/` | 用于核对同类实现引用是否真实存在 |
+| 输出文件 | `examples/{project}/{op}/REVIEW.md` | — |
 | 使用 Skill | `tilelang-design-review` | 执行检视并生成报告 |
 
 ---
@@ -110,8 +111,9 @@ conductor 在调度本 Agent 时传入 `design_md_path`。本 Agent 无 mode 分
 ```markdown
 ## Stage Result
 - stage: 2
+- project: {project}
 - operator: {op}
-- output: examples/{op}/REVIEW.md
+- output: examples/{project}/{op}/REVIEW.md
 - conclusion: 通过 / 不通过
 - validation: pass / fail
 - validation_details:

@@ -7,7 +7,7 @@ description: "对精度通过的算子实现进行性能调优，产出 kernel_o
 
 ## 1. 目标
 
-对 Stage 3 精度通过的 `example_{op}.py` 进行性能调优，产出优化后的 `perf_tuning/kernel_opt.py` 与调优日志，直到满足中止条件。
+对 Stage 3 精度通过的 `{op}.py` 进行性能调优，产出优化后的 `perf_tuning/kernel_opt.py` 与调优日志，直到满足中止条件。
 
 > **环境前提**：本 skill 运行在已具备 NPU 设备的环境中，性能 profiling 在 NPU 上真实执行。调优分析（瓶颈识别、优化策略）与性能测量均为真实结果。
 
@@ -17,7 +17,7 @@ description: "对精度通过的算子实现进行性能调优，产出 kernel_o
 
 | 字段 | 说明 |
 |------|------|
-| `kernel_py_path` | Stage 3 精度通过的 `example_{op}.py` |
+| `kernel_py_path` | Stage 3 精度通过的 `{op}.py` |
 | `design_md_path` | 含性能目标章节的 `DESIGN.md` |
 | 性能目标 | 类型（latency/throughput/baseline_compare/best_effort）、目标数值、测试 shape、噪声阈值、最大迭代数 |
 
@@ -26,7 +26,7 @@ description: "对精度通过的算子实现进行性能调优，产出 kernel_o
 ## 3. 工作流程
 
 ### Phase 1：基线分析
-1. Read `example_{op}.py` 与 `DESIGN.md` 性能目标章节。
+1. Read `{op}.py` 与 `DESIGN.md` 性能目标章节。
 2. 识别性能瓶颈（基于设计：访存瓶颈、计算密度、流水线深度、block 大小）。
 3. 测量基线性能（NPU 上真实 profiling）。
 
@@ -66,12 +66,12 @@ description: "对精度通过的算子实现进行性能调优，产出 kernel_o
 ## 4. 产物结构
 
 ```text
-examples/{op}/perf_tuning/
+examples/{project}/{op}/perf_tuning/
 ├── kernel_opt.py            # 最终最优版本
 ├── kernel_opt_v1.py         # 各迭代版本
 ├── kernel_opt_v2.py
 ├── tuning_log.md            # 调优日志
-└── baseline.py -> ../example_{op}.py  # 基线（软链或拷贝）
+└── baseline.py -> ../{op}.py  # 基线（软链或拷贝）
 ```
 
 ### tuning_log.md 模板
@@ -81,7 +81,7 @@ examples/{op}/perf_tuning/
 
 ## 基线
 - latency: {base} us
-- 来源: example_{op}.py
+- 来源: {op}.py
 
 ## 迭代记录
 | iter | 策略 | latency(us) | 提升 | 精度 |
@@ -103,8 +103,9 @@ examples/{op}/perf_tuning/
 ```markdown
 ## Stage Result
 - stage: 4
+- project: {project}
 - operator: {op}
-- output: examples/{op}/perf_tuning/kernel_opt.py
+- output: examples/{project}/{op}/perf_tuning/kernel_opt.py
 - verdict: TUNING_COMPLETED
 - iterations: {N}
 - baseline_latency: {v} us

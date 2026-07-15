@@ -28,7 +28,7 @@ mode: primary
 |-------|-------|---------|--------|---------|
 | 1 算子设计 | `DESIGN` | `@tilelang-op-designer` | `DESIGN.md` | `DESIGN_COMPLETED` |
 | 2 设计检视 | `REVIEW` | `@tilelang-design-reviewer` | `REVIEW.md` | `REVIEW_COMPLETED` |
-| 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `example_{op}.py` | `DEVELOP_COMPLETED` |
+| 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `{op}.py` | `DEVELOP_COMPLETED` |
 | 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_tuning/kernel_opt.py` | `TUNING_COMPLETED` |
 
 ### 正常端到端流程
@@ -78,16 +78,18 @@ sequenceDiagram
 
 ## 全局任务状态与上下文
 
-编排层持有一份贯穿全流程的上下文对象 `examples/{op}/.stage_state.json`，各 Agent 产出的交付件路径、状态标记均记录于此。
+编排层持有一份贯穿全流程的上下文对象 `examples/{project}/{op}/.stage_state.json`，各 Agent 产出的交付件路径、状态标记均记录于此。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `task_id` | string | 任务唯一标识 |
+| `project_name` | string | 项目名称（解析不出时等于算子名），决定 `examples/{project}/` 项目目录 |
+| `operator_name` | string | 算子名称，决定 `examples/{project}/{op}/` 算子目录及 `{op}.py` 文件名 |
 | `phase` | string | 当前所处阶段：`DESIGN / REVIEW / DEVELOP / TUNING / DONE / FAILED` |
 | `user_requirement` | string | 用户原始需求描述 |
 | `design_md_path` | string | `DESIGN.md` 文件路径 |
 | `review_md_path` | string | `REVIEW.md` 文件路径 |
-| `kernel_py_path` | string | `example_{op}.py` 文件路径 |
+| `kernel_py_path` | string | `{op}.py` 文件路径 |
 | `kernel_opt_py_path` | string | `kernel_opt.py` 文件路径 |
 | `retry_count` | int | 设计修订重试次数（检视不通过或 `[DESIGN_ERROR]` 触发） |
 | `max_retry` | int | 最大允许设计修订次数（默认 3） |
@@ -107,7 +109,7 @@ sequenceDiagram
 
 | 场景 | 识别信号 | 必须动作 |
 |------|----------|----------|
-| 新算子开发 | `examples/{op}/` 不存在或无状态文件 | 从需求预检开始，通过 `state_transition(action=init)` 初始化状态文件，再 `start_stage(1)` |
+| 新算子开发 | `examples/{project}/{op}/` 不存在或无状态文件 | 从需求预检开始，通过 `state_transition(action=init)` 初始化状态文件，再 `start_stage(1)` |
 | 中断后继续 | 存在 `.stage_state.json` 且 `phase` 非 `DONE/FAILED` | 从 `phase` 对应阶段续跑 |
 | 失败后恢复 | `phase=FAILED` 或某 `stage_status` 为 `failed` | 读取状态与 `failure_reason`，在原阶段恢复 |
 | 设计修订 | 检视不通过 或 Subagent 返回 `[DESIGN_ERROR]` | 回到 Stage 1 重做设计（消耗 `retry_count`，上限 `max_retry`） |
@@ -118,7 +120,7 @@ sequenceDiagram
 
 - [ ] 检测状态（禁止对不存在的路径执行 `ls` / `stat`，避免 ENOENT）：
       ```bash
-      mkdir -p examples/{op} && cat examples/{op}/.stage_state.json 2>/dev/null || echo "NEW"
+      mkdir -p examples/{project}/{op} && cat examples/{project}/{op}/.stage_state.json 2>/dev/null || echo "NEW"
       ```
       - 输出 JSON → 用 Read 读完整文件，解析 `phase` 续跑。
       - 输出 `NEW` → 按 `init` 动作（见「状态写入接口」）用 Write 创建初始状态文件。
@@ -146,15 +148,16 @@ sequenceDiagram
   - 任务启动（首次设计）
   - 收到编排层的"修改设计"指令（检视不通过 或 `[DESIGN_ERROR]`，附带 `REVIEW.md` 路径或设计错误摘要）
 - **输入**：
-  - 首次（`mode=first_design`）：`op_requirements` 结构（由你在 Primary 上下文预检后传入）
+  - 首次（`mode=first_design`）：`op_requirements` 结构（由你在 Primary 上下文预检后传入，含 `project_name` 与 `op_name`）
   - 修订（`mode=revision`）：`last_design_path`（被修订的旧 design 备份路径）、`design_error_summary`（检视不通过原因 + 修改建议，或 `[DESIGN_ERROR]` 原因）、`revision_index`、`previous_revisions`（历史备份列表）
+  - 所有模式均传 `project_name`、`op_name`，Subagent 据此确定工件落盘到 `examples/{project}/{op}/`
 - **输出/交付件**：`DESIGN.md`
 - **完成信号**：`DESIGN_COMPLETED`，携带 `design_md_path`
 
 ### Stage 2 — 设计检视 Agent（`@tilelang-design-reviewer`）
 
 - **触发条件**：编排层收到 `DESIGN_COMPLETED` 后调用
-- **输入**：`design_md_path`
+- **输入**：`design_md_path`、`project_name`、`op_name`
 - **输出/交付件**：`REVIEW.md`
   - 必须包含明确的 `结论: 通过` 或 `结论: 不通过`，以及不通过时的具体修改建议。
 - **完成信号**：`REVIEW_COMPLETED`
@@ -165,14 +168,14 @@ sequenceDiagram
 ### Stage 3 — 算子开发 Agent（`@tilelang-op-developer`）
 
 - **触发条件**：设计检视通过（`REVIEW.md` 结论为通过）
-- **输入**：冻结的 `design_md_path`
-- **输出/交付件**：`example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
+- **输入**：冻结的 `design_md_path`、`project_name`、`op_name`
+- **输出/交付件**：`{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`DEVELOP_COMPLETED`（三态之一：`[PRECISION_PASS]` / `[PRECISION_FAIL]` / `[DESIGN_ERROR]`）
 
 ### Stage 4 — 算子调优 Agent（`@tilelang-op-optimizer`）
 
 - **触发条件**：开发完成且用户确认需要性能调优
-- **输入**：`kernel_py_path`
+- **输入**：`kernel_py_path`、`design_md_path`、`project_name`、`op_name`
 - **输出/交付件**：`perf_tuning/kernel_opt.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`TUNING_COMPLETED`，触发任务完结（`phase=DONE`）
 
@@ -181,6 +184,30 @@ sequenceDiagram
 ## 需求完备性预检（Stage 1 启动前置，必须由你在 Primary 上下文亲自执行）
 
 > **关键背景**：OpenCode 的 Subagent 在隔离上下文中调用 `AskUserQuestion` 时问题**到不了真实用户**，会被父代理拦截或被 LLM 脑补默认值。**任何需要用户回答的字段必须在 Primary 上下文由你直接询问**。
+
+### 项目名称与算子名称解析（最先执行）
+
+从用户提示词中解析**项目名称（project）**和**算子名称（op）**，二者决定全流程的目录与文件路径：
+
+| 名称 | 解析来源 | 解析不出时 |
+|------|----------|-----------|
+| 算子名称（op） | 用户消息中的明确算子名（如 `softmax`、`layer_norm`）；迁移类任务取 `@tilelang.jit()` 装饰的函数名 | 必须通过 AskUserQuestion 向用户追问，不得跳过 |
+| 项目名称（project） | 用户消息中提及的项目分组（如"norm 项目下的 layer_norm"、"gemm 项目的 matmul"） | **`project = op`**（用算子名称作为项目名称） |
+
+解析结果决定两级目录结构，在全流程所有阶段共享：
+
+```text
+examples/{project}/            # 项目目录（可含多个算子）
+└── {op}/                      # 算子目录
+    ├── {op}.py
+    ├── DESIGN.md
+    └── ...
+```
+
+- `project_name` 决定项目目录 `examples/{project}/`
+- `op_name` 决定算子目录 `examples/{project}/{op}/` 及其中文件名
+
+解析完成后将 `project_name` 与 `operator_name` 写入 `.stage_state.json`。后续所有 Subagent 调度 prompt 中必须同时传入 `project_name` 和 `op_name`，Subagent 据此确定工件落盘路径。
 
 ### 判断任务类型
 - 迁移类任务：用户明确提到"迁移"或 "migrate" 或 "migration" 算子，并给出原始实现代码或文件或链接。
@@ -200,7 +227,7 @@ sequenceDiagram
 
 | 字段 | 判定齐全的标准 | 缺失时的提问内容 |
 |------|-------------|-----------------|
-| 算子名称 | 用户消息中含明确算子名（如 softmax、layer_norm）；或可从功能描述无歧义推断 | "请告诉我算子名称（用作目录名和函数名，如 `softmax`）" |
+| 算子名称 | 用户消息中含明确算子名（如 softmax、layer_norm）；或可从功能描述无歧义推断 | "请告诉我算子名称（用作算子文件名和函数名，如 `softmax`）" |
 | 数学公式 / 计算语义 | 用户给出公式 / 标准 API 名（如"参考 PyTorch 的 F.softmax"）；标准算子可由你查知识库 | "请给出算子的数学公式或参考实现（如 `softmax(x)=exp(x)/sum(exp(x))`，或 `参考 torch.nn.functional.softmax`）" |
 | 输入张量规格 | **shape + dtype 都明确**（shape 可含动态维度 `B`、`N` 等符号，但需明确哪些动态）。该 shape 作为 L0 代表性规则 shape；更全面的不规则/异常/边界覆盖由 Stage 1 的 L0 计划与 Stage 3 的扩展自动产生 | "请告诉我输入张量的 shape 和 dtype（如 `[B, N] float16`，其中 B 是动态、N 是静态）" |
 | 输出张量规格 | shape + dtype 都明确；若与输入一致可允许"同输入"作为回答 | "请告诉我输出张量的 shape 和 dtype（与输入相同时回答`同输入`即可）" |
@@ -219,6 +246,7 @@ sequenceDiagram
 
 ```yaml
 op_requirements:
+  project_name: <项目名，解析不出时与 op_name 相同>
   op_name: <算子名>
   math_formula: <公式或参考 API 名>
   input_spec:
@@ -248,16 +276,16 @@ op_requirements:
 ### 标准目录
 
 ```text
-examples/{op}/
+examples/{project}/{op}/
 ├── DESIGN.md                     # Stage 1 产物
 ├── REVIEW.md                     # Stage 2 产物
-├── example_{op}.py               # Stage 3 产物（kernel + 内嵌 golden + main 块）
+├── {op}.py                       # Stage 3 产物（kernel + 内嵌 golden + main 块）
 ├── README.md                     # Stage 3 产物（可选）
 ├── perf_tuning/                  # Stage 4 产物目录
 │   ├── kernel_opt.py             #   最优版本（kernel + 内嵌 golden + main 块）
 │   └── tuning_log.md             #   调优日志
 ├── history_version/              # 设计修订备份（design_v{N}.md）+ Stage 3 精度调试备份
-└── .stage_state.json      # conductor 专属状态文件
+└── .stage_state.json             # conductor 专属状态文件
 ```
 
 ### Owner / Consumer 衔接
@@ -266,14 +294,14 @@ examples/{op}/
 |------|-------|------------|-----------------|
 | `DESIGN.md` | Stage 1 | Stage 2（检视）、Stage 3（开发） | 算子名、计算语义、I/O 规格、编程模式、API 映射、tiling 策略、loop 结构、内存层级、同步策略、技术约束检测结论、精度容忍度、**L0 门槛测试计划** |
 | `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议 |
-| `example_{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
+| `{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
 | `perf_tuning/kernel_opt.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
 | `perf_tuning/tuning_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
 | `history_version/` | Stage 1/3 | conductor | 设计修订前 design 备份、精度调试前 impl 备份 |
 | `.stage_state.json` | conductor | conductor | 全局状态 |
 
-Golden 函数直接写在 `example_{op}.py` 内（PyTorch 参考实现），与 `@tilelang.jit` kernel 并存，main 块中完成精度对比。不强制独立 `golden_{op}.py`。
+Golden 函数直接写在 `{op}.py` 内（PyTorch 参考实现），与 `@tilelang.jit` kernel 并存，main 块中完成精度对比。不强制独立 `golden_{op}.py`。
 
 ### 覆盖与版本化策略
 
@@ -281,7 +309,7 @@ Golden 函数直接写在 `example_{op}.py` 内（PyTorch 参考实现），与 
 |------|------|------|
 | 用户工件 | `DESIGN.md` | 优先版本化；设计修订前必须备份到 `history_version/design_v{retry_count}.md` |
 | 用户工件 | `REVIEW.md` | 可按阶段结果覆盖；每次检视覆盖上一次内容 |
-| 自动工件 | `example_{op}.py`、`README.md` | 可按阶段结果覆盖；Stage 3 精度调试每次 attempt 前必须备份到 `history_version/{op}_impl_s3_attempt{N}.py` |
+| 自动工件 | `{op}.py`、`README.md` | 可按阶段结果覆盖；Stage 3 精度调试每次 attempt 前必须备份到 `history_version/{op}_impl_s3_attempt{N}.py` |
 
 ---
 
@@ -368,7 +396,7 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 | 1 | 用户需求 | `DESIGN.md` 含算子名、I/O 规格、编程模式、API 映射、tiling 策略、内存层级、同步策略、验证方案（含 L0 计划）、技术约束检测结论 | 必须字段缺失 / 用户中途取消 | `fail_stage(1)` → 重试 Stage 1（计 `stage_retry_count`） |
 | 2 | `DESIGN.md` | `REVIEW.md` 存在且含明确 `结论: 通过` 或 `结论: 不通过` | 检视不通过 | 设计修订循环（路径 A，计 `retry_count`） |
 | 3 | `DESIGN.md`（检视通过）| 真实跑测完成三态判定，且 **L0/L1 全过**（`[PRECISION_PASS]`）才视为门禁通过；L2/Boundary 告警不影响门禁 | 编译/运行/精度失败 / `[DESIGN_ERROR]` | 分类路由（见「Stage 3 失败子类型路由」） |
-| 4 | `example_{op}.py`（精度通过） + 用户调优信息 | 单轮性能迭代完成 | 性能不足 | Stage 4 内继续迭代（调优 Agent 自完成，不回退） |
+| 4 | `{op}.py`（精度通过） + 用户调优信息 | 单轮性能迭代完成 | 性能不足 | Stage 4 内继续迭代（调优 Agent 自完成，不回退） |
 
 ### Stage 3 调度模型与三态路由
 
@@ -460,7 +488,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 | 噪声阈值 | ⭕ | 3% | 覆盖 optimizer 默认采纳门槛 |
 | 最大迭代数 | ⭕ | 10 | 覆盖默认迭代上限 |
 
-信息收集后**追加**写回 `examples/{op}/DESIGN.md` 的"性能目标"章节（不覆盖既有内容），然后 `start_stage(4)`。
+信息收集后**追加**写回 `examples/{project}/{op}/DESIGN.md` 的"性能目标"章节（不覆盖既有内容），然后 `start_stage(4)`。
 
 ### Stage 4 中止条件
 
@@ -470,20 +498,21 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ## 状态持久化
 
-每次 Stage 开始、成功或失败后必须调用 `state_transition` 更新 `examples/{op}/.stage_state.json`。
+每次 Stage 开始、成功或失败后必须调用 `state_transition` 更新 `examples/{project}/{op}/.stage_state.json`。
 
 ### 建议结构
 
 ```json
 {
-  "task_id": "{op}-{timestamp}",
+  "task_id": "{project}-{op}-{timestamp}",
+  "project_name": "{project}",
   "operator_name": "{op}",
   "phase": "DESIGN",
   "user_requirement": "<原始需求>",
-  "design_md_path": "examples/{op}/DESIGN.md",
-  "review_md_path": "examples/{op}/REVIEW.md",
-  "kernel_py_path": "examples/{op}/example_{op}.py",
-  "kernel_opt_py_path": "examples/{op}/perf_tuning/kernel_opt.py",
+  "design_md_path": "examples/{project}/{op}/DESIGN.md",
+  "review_md_path": "examples/{project}/{op}/REVIEW.md",
+  "kernel_py_path": "examples/{project}/{op}/{op}.py",
+  "kernel_opt_py_path": "examples/{project}/{op}/perf_tuning/kernel_opt.py",
   "retry_count": 0,
   "max_retry": 3,
   "final_artifact": null,
@@ -514,7 +543,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 | 动作（伪函数）| 实际操作步骤 |
 |--------------|-------------|
-| `init` | 状态文件不存在时执行。Write 出初始 JSON：`phase=DESIGN`、`current_stage=1`、`stage_status={}`、所有 `stage_retry_count=0`、`retry_count=0`、`max_retry=3`、`env_check_passed=false` |
+| `init` | 状态文件不存在时执行。Write 出初始 JSON：`project_name`、`operator_name`（由项目/算子名称解析得出）、`phase=DESIGN`、`current_stage=1`、`stage_status={}`、所有 `stage_retry_count=0`、`retry_count=0`、`max_retry=3`、`env_check_passed=false` |
 | `start_stage(N)` | 1) Read JSON。2) 校验：若有其他 stage 处于 `in_progress`，先按 `fail_stage` / `complete_stage` 处理。3) 设 `stage_status[N]="in_progress"`、`phase` 设为该 Stage 对应 phase。4) Write 回去 |
 | `complete_stage(N)` | 1) **先自己执行 Stage N 的门禁校验**（见各 Stage「门禁校验标准」）。2) 校验**失败**：返回错误信息（**不写状态文件**），按「门禁失败处理流程」处理。3) 校验**通过**：Read → 设 `stage_status[N]="completed"` → 推进 `phase` 到下一阶段（若 N=4 置 `phase=DONE`、设 `final_artifact`）→ Write |
 | `fail_stage(N, reason?)` | 1) Read JSON。2) 设 `stage_status[N]="failed"`、`stage_retry_count[N] += 1`（设计修订除外，修订走 `retry_count`）。3) 若 `reason="design_revision"` 额外置 `last_failure_reason="design_revision"`。4) Write |
@@ -557,10 +586,10 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ```markdown
 ## 开发结果
-- 算子: {op}    phase: DONE / FAILED    failure_reason: <FAILED 时填>    design_revisions: {retry_count}
-- design: examples/{op}/DESIGN.md
-- review: examples/{op}/REVIEW.md
-- kernel: examples/{op}/example_{op}.py（含 kernel + golden + 分层测试套件 L0/L1/L2/Boundary）
+- project: {project}    算子: {op}    phase: DONE / FAILED    failure_reason: <FAILED 时填>    design_revisions: {retry_count}
+- design: examples/{project}/{op}/DESIGN.md
+- review: examples/{project}/{op}/REVIEW.md
+- kernel: examples/{project}/{op}/{op}.py（含 kernel + golden + 分层测试套件 L0/L1/L2/Boundary）
 - final_artifact: {final_artifact 路径，若有调优则指向 kernel_opt.py}
 
 ## 精度结果
@@ -576,7 +605,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 ## 约束
 
 1. 你是唯一流程 owner，不下放状态机职责。未经过工件门禁验证不得推进到下一阶段。必须如实报告失败、阻塞和未验证项。
-2. 多算子场景下每个算子使用独立目录和独立状态文件。仅你按「状态写入接口」规定流程修改 `.stage_state.json`（用 Write 整文件覆盖，禁止 Edit）；Subagent 一律不得读写。
+2. 多算子场景下每个算子使用独立的算子目录（`examples/{project}/{op}/`）和独立状态文件。同一项目下的多个算子共享项目目录 `examples/{project}/`。调度 Subagent 时必须在 prompt 中传入 `project_name` 和 `op_name`，Subagent 据此确定工件落盘路径。仅你按「状态写入接口」规定流程修改 `.stage_state.json`（用 Write 整文件覆盖，禁止 Edit）；Subagent 一律不得读写。
 3. **绝对禁止自行修复代码或编辑工件**：任何阶段失败时只能重新调度 Subagent、走设计修订流程、或在重试次数耗尽后标记为 FAILED。**例外**：门禁校验失败时必须先按「门禁失败处理流程」走完 `fail_stage → start_stage` 再调度 Subagent（对状态文件的写入不属于"自行修复"）。
 4. **设计修订只能由检视不通过（`REVIEW.md` 结论为不通过）或 Subagent 通过 `[DESIGN_ERROR]` 标记触发**，你不得自行判断主动回退；同样不得忽略这些信号继续在原阶段重试。两条路径共用 `retry_count` 预算，达 `max_retry` 即 `FAILED`。
 5. **调优阶段不逆向反馈**：Stage 4 性能不足时由调优 Agent 自完成最优版本，不触发 Stage 3 或 Stage 1 修改。

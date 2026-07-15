@@ -25,7 +25,8 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 | 字段 | 说明 |
 |------|------|
-| 算子名称 | 如 `softmax`、`layer_norm`、`flash_attention` |
+| **项目名称** | 项目分组名，决定 `examples/{project}/` 项目目录；由 conductor 解析，无明确项目名时与算子名相同 |
+| 算子名称 | 如 `softmax`、`layer_norm`、`flash_attention`，决定 `examples/{project}/{op}/` 算子目录及 `{op}.py` 文件名 |
 | 数学公式 | 算子的数学表达，如 $\text{softmax}(x_i) = e^{x_i} / \sum e^{x_j}$ |
 | 输入张量规格 | shape、dtype |
 | 输出张量规格 | shape、dtype |
@@ -123,7 +124,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 ### Phase 6：输出
 
-将 `DESIGN.md` 输出到当前目录或用户指定路径。若文件已存在，询问是否覆盖。
+将 `DESIGN.md` 输出到 `examples/{project}/{op}/` 算子目录（`{project}` 为项目名称、`{op}` 为算子名称，均由调用方传入；无明确项目名时与算子名相同）。若文件已存在，询问是否覆盖。
 
 ---
 

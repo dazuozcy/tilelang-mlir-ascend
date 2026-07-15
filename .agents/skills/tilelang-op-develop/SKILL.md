@@ -1,13 +1,13 @@
 ---
 name: tilelang-op-develop
-description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：kernel + golden），执行测试并返回三态判定。触发：实现算子、生成 kernel、算子开发、跑精度。"
+description: "根据冻结的 DESIGN.md 生成算子实现（{op}.py：kernel + golden），执行测试并返回三态判定。触发：实现算子、生成 kernel、算子开发、跑精度。"
 ---
 
 # TileLang-NPUIR 算子开发与验证
 
 ## 1. 目标
 
-根据 Stage 1 冻结的 `DESIGN.md` 与 Stage 2 通过的 `REVIEW.md`，生成算子实现文件 `example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口），执行测试，并返回三态判定供 conductor 路由。
+根据 Stage 1 冻结的 `DESIGN.md` 与 Stage 2 通过的 `REVIEW.md`，生成算子实现文件 `{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口），执行测试，并返回三态判定供 conductor 路由。
 
 > **环境前提**：本 skill 运行在已具备 NPU 设备的环境中，`tilelang` 与 `torch_npu` 可正常导入。kernel 编译与执行在 NPU 上真实进行，精度校验为真实结果。
 
@@ -42,7 +42,7 @@ description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：k
 2. Golden 必须在 CPU 上可独立运行（不依赖 torch_npu）。
 
 ### Phase 4：执行测试
-1. 跑 L0：`python example_{op}.py --level L0`。
+1. 跑 L0：`python {op}.py --level L0`。
 2. L0 通过后扩展 L1/L2/Boundary 并跑全量 `--level all`。
 3. 收集结果：max_diff、失败用例 shape、层级。
 
@@ -57,7 +57,7 @@ description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：k
 
 ---
 
-## 4. `example_{op}.py` 结构规范
+## 4. `{op}.py` 结构规范
 
 生成的文件必须包含以下组成部分（顺序）：
 注意：*.py 中的注释只能使用英文
@@ -106,9 +106,9 @@ def main():
 
 ## 6. 备份规则
 
-`precision_fix` 模式每次修改 `example_{op}.py` 前，必须先备份：
+`precision_fix` 模式每次修改 `{op}.py` 前，必须先备份：
 ```bash
-cp example_{op}.py history_version/{op}_impl_s3_attempt{N}.py
+cp {op}.py history_version/{op}_impl_s3_attempt{N}.py
 ```
 （`{N}` = 当前 attempt_index）
 
@@ -122,8 +122,9 @@ cp example_{op}.py history_version/{op}_impl_s3_attempt{N}.py
 ## Stage Result
 - stage: 3
 - mode: first_impl / retry_impl / precision_fix
+- project: {project}
 - operator: {op}
-- output: examples/{op}/example_{op}.py
+- output: examples/{project}/{op}/{op}.py
 - verdict: [PRECISION_PASS] / [PRECISION_FAIL] / [DESIGN_ERROR] / RUNTIME_FAIL
 - test_results:
   - L0: pass / fail (N cases)

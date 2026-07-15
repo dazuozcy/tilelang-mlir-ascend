@@ -1,4 +1,4 @@
-"""example_{op}.py template
+"""{op}.py template
 
 This template takes elementwise_add as an example operator.
 When generating an actual operator, replace the relevant kernel/golden/test use cases.

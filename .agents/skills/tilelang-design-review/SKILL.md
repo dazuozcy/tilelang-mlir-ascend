@@ -16,7 +16,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | 字段 | 说明 |
 |------|------|
 | `design_md_path` | 待检视的 `DESIGN.md` 路径（由 conductor 传入） |
-| 算子目录 | `examples/{op}/`，用于核对同类实现引用是否真实存在 |
+| 算子目录 | `examples/{project}/{op}/`，用于核对同类实现引用是否真实存在 |
 
 检视前必须用 Read 完整读取 `DESIGN.md`，并用 Glob 核对其中引用的 `examples/` 文件是否真实存在。
 
@@ -104,7 +104,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | 任一**阻塞级**维度为 fail | `结论: 不通过`，必须给出具体修改建议 |
 
 ### Phase 4：生成 REVIEW.md
-按 §5 模板写入 `examples/{op}/REVIEW.md`。
+按 §5 模板写入 `examples/{project}/{op}/REVIEW.md`。
 
 ---
 
@@ -119,7 +119,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 <!-- 或：结论: 不通过 -->
 
 ## 检视元信息
-- 文档: examples/{op}/DESIGN.md
+- 文档: examples/{project}/{op}/DESIGN.md
 - 检视维度: 7 项（API 可行性 / 内存层级 / Tiling / 技术约束 / 循环同步 / 验证方案 / 完整性）
 - 阻塞级问题数: {N}
 - 建议级问题数: {N}
@@ -163,7 +163,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 
 ## 6. 输出规则
 
-1. `REVIEW.md` 必须写入 `examples/{op}/REVIEW.md`。
+1. `REVIEW.md` 必须写入 `examples/{project}/{op}/REVIEW.md`。
 2. **结论行必须是字面量** `结论: 通过` 或 `结论: 不通过`（conductor 据此判定路由），不得用"基本通过"、"建议通过"等模糊表述。
 3. 不通过时，每个阻塞级问题必须给出**可执行的修改建议**，作为 Stage 1 `revision` 模式的 `design_error_summary` 输入。
 4. 通过时不得出现"检视问题列表"章节。

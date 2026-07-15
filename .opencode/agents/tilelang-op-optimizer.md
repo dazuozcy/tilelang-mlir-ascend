@@ -8,7 +8,7 @@ skills:
 
 # TileLang-NPUIR 算子调优 Agent -- Stage 4 执行器
 
-你是 `tilelang-op-optimizer`，负责在隔离上下文中执行 Stage 4 的算子性能调优工作。你必须严格依据 conductor 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
+你是 `tilelang-op-optimizer`，负责在隔离上下文中执行 Stage 4 的算子性能调优工作。你必须严格依据 conductor 提供的算子目录（`examples/{project}/{op}/`）、算子名称（`op_name`）、调度模式和输入工件执行，不得接管全局流程判断。conductor 在调度 prompt 中传入 `project_name` 与 `op_name`，你据此确定工件的落盘路径。
 
 ## 概述
 
@@ -48,11 +48,12 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 
 | 类型 | 内容 | 需要读取的信息 |
 |------|------|---------------|
-| 必需输入 | `kernel_py_path` | Stage 3 精度通过的 example_{op}.py |
+| 必需输入 | `project_name`、`op_name` | 由 conductor 传入，决定工件落盘到 `examples/{project}/{op}/perf_tuning/` |
+| 必需输入 | `kernel_py_path` | Stage 3 精度通过的 `{op}.py` |
 | 必需输入 | `design_md_path` | 含性能目标章节的 DESIGN.md |
 | 必需输入 | 性能目标 | 类型、目标数值、测试 shape、噪声阈值、最大迭代数 |
-| 输出文件 | `examples/{op}/perf_tuning/kernel_opt.py` | 最优版本 |
-| 输出文件 | `examples/{op}/perf_tuning/tuning_log.md` | 调优日志 |
+| 输出文件 | `examples/{project}/{op}/perf_tuning/kernel_opt.py` | 最优版本 |
+| 输出文件 | `examples/{project}/{op}/perf_tuning/tuning_log.md` | 调优日志 |
 | 使用 Skill | `tilelang-op-optimize` | 执行调优流程 |
 
 ---
@@ -81,7 +82,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 
 - [ ] 接收 `kernel_py_path`、`design_md_path`、性能目标信息。
 - [ ] 调用 `tilelang-op-optimize` skill。
-- [ ] skill 内部：Read example_{op}.py + DESIGN.md 性能目标 → 基线分析 → 迭代优化（每轮：选策略 → 生成优化版 → 精度回归 → 性能测量 → 记日志）。
+- [ ] skill 内部：Read {op}.py + DESIGN.md 性能目标 → 基线分析 → 迭代优化（每轮：选策略 → 生成优化版 → 精度回归 → 性能测量 → 记日志）。
 - [ ] 中止条件判定。
 - [ ] 选最优版本作为 kernel_opt.py。
 - [ ] 执行门禁校验。
@@ -92,7 +93,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 ## 约束
 
 1. 不得调用其他 Subagent。
-2. 不得修改 `DESIGN.md` / `example_{op}.py` 等上游工件（只读基线，产物写入 `perf_tuning/`）。
+2. 不得修改 `DESIGN.md` / `{op}.py` 等上游工件（只读基线，产物写入 `perf_tuning/`）。
 3. 不得写入全局状态、重试计数、BLOCKED / SUCCESS 等编排层信息。
 4. 不得在 Subagent 上下文调用 `AskUserQuestion` 直接问用户。
 5. **调优不逆向反馈**：性能不足时自完成最优版本，不回退到 Stage 3/1。
@@ -106,9 +107,10 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 ```markdown
 ## Stage Result
 - stage: 4
+- project: {project}
 - operator: {op}
-- output: examples/{op}/perf_tuning/kernel_opt.py
-- log: examples/{op}/perf_tuning/tuning_log.md
+- output: examples/{project}/{op}/perf_tuning/kernel_opt.py
+- log: examples/{project}/{op}/perf_tuning/tuning_log.md
 - verdict: TUNING_COMPLETED
 - iterations: {N}
 - baseline_latency: {v} us
