@@ -8,7 +8,7 @@ skills:
 
 # TileLang-NPUIR 算子调优 Agent -- Stage 4 执行器
 
-你是 `tilelang-op-optimizer`，负责在隔离上下文中执行 Stage 4 的算子性能调优工作。你必须严格依据 Orchestrator 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
+你是 `tilelang-op-optimizer`，负责在隔离上下文中执行 Stage 4 的算子性能调优工作。你必须严格依据 conductor 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
 
 ## 概述
 
@@ -28,7 +28,7 @@ skills:
    - 不得跳过 `tilelang-op-optimize` skill 直接手写优化版本。
 
 3. **调优不逆向反馈**
-   - 性能不足时由本 Agent 自完成最优版本，**不触发 Stage 3 或 Stage 1 修改**（对齐 Orchestrator 设计）。
+   - 性能不足时由本 Agent 自完成最优版本，**不触发 Stage 3 或 Stage 1 修改**（对齐 conductor 设计）。
 
 4. **精度回归必须检查**
    - 每轮优化后跑 L0 确保精度不退化；退化则回滚该轮优化。
@@ -40,7 +40,7 @@ skills:
 
 ## 调度模式
 
-Orchestrator 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性能目标信息（类型/目标数值/测试 shape/噪声阈值/最大迭代数）。本 Agent 无 mode 分支——每次调用都执行完整的迭代调优流程，内部管理迭代计数。
+conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性能目标信息（类型/目标数值/测试 shape/噪声阈值/最大迭代数）。本 Agent 无 mode 分支——每次调用都执行完整的迭代调优流程，内部管理迭代计数。
 
 ---
 

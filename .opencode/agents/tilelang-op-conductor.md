@@ -29,7 +29,7 @@ mode: primary
 | 1 算子设计 | `DESIGN` | `@tilelang-op-designer` | `DESIGN.md` | `DESIGN_COMPLETED` |
 | 2 设计检视 | `REVIEW` | `@tilelang-design-reviewer` | `REVIEW.md` | `REVIEW_COMPLETED` |
 | 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `example_{op}.py` | `DEVELOP_COMPLETED` |
-| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_tuning/` + `kernel_opt.py` | `TUNING_COMPLETED` |
+| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `example_{op}_opt.py` | `TUNING_COMPLETED` |
 
 ### 正常端到端流程
 
@@ -166,14 +166,14 @@ sequenceDiagram
 
 - **触发条件**：设计检视通过（`REVIEW.md` 结论为通过）
 - **输入**：冻结的 `design_md_path`
-- **输出/交付件**：`example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 L0/L1/L2/Boundary + main 块）
+- **输出/交付件**：`example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`DEVELOP_COMPLETED`（三态之一：`[PRECISION_PASS]` / `[PRECISION_FAIL]` / `[DESIGN_ERROR]`）
 
 ### Stage 4 — 算子调优 Agent（`@tilelang-op-optimizer`）
 
 - **触发条件**：开发完成且用户确认需要性能调优
 - **输入**：`kernel_py_path`
-- **输出/交付件**：`perf_tuning/` + `kernel_opt.py`
+- **输出/交付件**：`example_{op}_opt.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`TUNING_COMPLETED`，触发任务完结（`phase=DONE`）
 
 ---
@@ -251,11 +251,11 @@ op_requirements:
 examples/{op}/
 ├── DESIGN.md                     # Stage 1 产物
 ├── REVIEW.md                     # Stage 2 产物
-├── example_{op}.py               # Stage 3 产物（kernel + 内嵌 golden + 分层测试套件 L0/L1/L2/Boundary + main 块）
+├── example_{op}.py               # Stage 3 产物（kernel + 内嵌 golden + main 块）
 ├── README.md                     # Stage 3 产物（可选）
-├── perf_tuning/                  # Stage 4 产物目录
+├── example_{op}_opt.py           # Stage 4 产物（kernel + 内嵌 golden + main 块）
 ├── history_version/              # 设计修订备份（design_v{N}.md）+ Stage 3 精度调试备份
-└── .stage_state.json      # Orchestrator 专属状态文件
+└── .stage_state.json      # conductor 专属状态文件
 ```
 
 ### Owner / Consumer 衔接
@@ -263,12 +263,12 @@ examples/{op}/
 | 工件 | Owner | 主要消费者 | 消费者需要的信息 |
 |------|-------|------------|-----------------|
 | `DESIGN.md` | Stage 1 | Stage 2（检视）、Stage 3（开发） | 算子名、计算语义、I/O 规格、编程模式、API 映射、tiling 策略、loop 结构、内存层级、同步策略、技术约束检测结论、精度容忍度、**L0 门槛测试计划** |
-| `REVIEW.md` | Stage 2 | Orchestrator（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议 |
+| `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议 |
 | `example_{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
-| `perf_tuning/` | Stage 4 | 用户 | 性能优化日志、对比数据、最终版本 |
-| `history_version/` | Stage 1/3 | Orchestrator | 设计修订前 design 备份、精度调试前 impl 备份 |
-| `.stage_state.json` | Orchestrator | Orchestrator | 全局状态 |
+| `example_{op}_opt.py` | Stage 3 | Stage 4 （自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
+| `history_version/` | Stage 1/3 | conductor | 设计修订前 design 备份、精度调试前 impl 备份 |
+| `.stage_state.json` | conductor | conductor | 全局状态 |
 
 Golden 函数直接写在 `example_{op}.py` 内（PyTorch 参考实现），与 `@tilelang.jit` kernel 并存，main 块中完成精度对比。不强制独立 `golden_{op}.py`。
 
@@ -461,7 +461,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ### Stage 4 中止条件
 
-满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `perf_tuning/kernel_opt.py`（或最优版本）。
+满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `example_{op}_opt.py`（或最优版本）。
 
 ---
 
@@ -480,7 +480,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
   "design_md_path": "examples/{op}/DESIGN.md",
   "review_md_path": "examples/{op}/REVIEW.md",
   "kernel_py_path": "examples/{op}/example_{op}.py",
-  "kernel_opt_py_path": "examples/{op}/perf_tuning/kernel_opt.py",
+  "kernel_opt_py_path": "examples/{op}/example_{op}_opt.py",
   "retry_count": 0,
   "max_retry": 3,
   "final_artifact": null,

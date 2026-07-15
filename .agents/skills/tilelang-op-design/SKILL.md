@@ -1,13 +1,13 @@
 ---
 name: tilelang-op-design
-description: "根据算子需求生成 TileLang-Ascend 算子设计文档（design.md）。涵盖编程模式选型（Developer/Expert/混合）、API 映射、内存层级规划、Tiling 策略、循环结构、同步策略、验证方案等。触发：设计算子、生成 design.md、算子方案设计、新算子开发、算子实现方案。"
+description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（design.md）。涵盖编程模式选型（Developer/Expert/混合）、API 映射、内存层级规划、Tiling 策略、循环结构、同步策略、验证方案等。触发：设计算子、生成 design.md、算子方案设计、新算子开发、算子实现方案。"
 ---
 
-# TileLang-Ascend 算子设计文档生成
+# TileLang-NPUIR 算子设计文档生成
 
 ## 1. 目标
 
-根据算子需求信息，生成一份完整的 TileLang-Ascend 算子设计文档（`design.md`），涵盖以下核心决策：
+根据算子需求信息，生成一份完整的 TileLang-NPUIR 算子设计文档（`design.md`），涵盖以下核心决策：
 
 - **编程模式选型**：Developer / Expert / 混合模式
 - **API 映射**：将数学公式拆解为 TileLang DSL 原语组合
@@ -15,7 +15,7 @@ description: "根据算子需求生成 TileLang-Ascend 算子设计文档（desi
 - **Tiling 策略**：Block 划分与 Tile Shape 设计
 - **循环结构**：T.Parallel / T.serial / T.Pipelined / T.Persistent 的选择
 - **同步策略**：自动同步 vs 手动同步标志
-- **验证方案**：Golden 函数与 L0 门槛测试计划（完整分层套件 L1/L2/Boundary 由 tilelang-op-test-design 生成）
+- **验证方案**：与 Golden 函数输出作比对
 
 ---
 
@@ -30,12 +30,11 @@ description: "根据算子需求生成 TileLang-Ascend 算子设计文档（desi
 | 输入张量规格 | shape、dtype |
 | 输出张量规格 | shape、dtype |
 | 编程模式偏好 | Developer / Expert / 混合 |
-| **迁移算子路径** ⭐ | 原算子文件路径（迁移时必需），用于获取 golden 实现 |
+| **迁移算子路径** ⭐ | 原算子文件路径（迁移时必需），用于分析原始实现及 实现 golden 函数 |
 | **输出形状** ⭐ | 原算子输出 shape（迁移时必需），如 `(N, M)` 或 `(M, N)` |
 
 **迁移算子时必须提供原算子路径和输出形状**，否则无法证明迁移正确性。Golden 实现一致性要求详见 [tilelang-op-develop SKILL.md](../tilelang-op-develop/SKILL.md)。
 
-> **打桩感知**：本 skill 生成纯文档，不涉及 NPU 执行，无需打桩。但 §8 L0 测试计划中描述的"执行测试"动作由 Stage 3（`tilelang-op-develop`）落地，非 NPU 环境下 Stage 3 通过 `TILELANG_OP_STUB_NPU=1` 打桩执行。本 skill 在 L0 计划中只需给出 shape/dtype/精度标准，不需考虑打桩。
 
 **提问规则（必须严格遵守）**：
 1. **优先使用调用方传入的字段**：若调用方（如 `@tilelang-op-conductor` 通过 designer 传入 `op_requirements` 结构）已经提供了字段值，**全部跳过提问**，直接进入技术约束检测和 design 生成
@@ -67,7 +66,7 @@ description: "根据算子需求生成 TileLang-Ascend 算子设计文档（desi
 
 ## 3. 技术约束（必须遵守）
 
-本项目为 TileLang-Ascend（华为昇腾 NPU），与 GPU 版 TileLang 有显著差异。外部参考实现不可直接使用，必须转换为 Ascend 兼容方案。
+本项目为 TileLang-NPUIR （后端为华为昇腾 NPU），与 GPU 版 TileLang 有显著差异。外部参考实现不可直接使用，必须转换为 Ascend 兼容方案。
 
 **生成 design.md 前必须执行强制检测**：三维 Kernel、threads 参数、动态循环边界、GPU 专用 API、GEMM 非整除、L0C 溢出等。
 
