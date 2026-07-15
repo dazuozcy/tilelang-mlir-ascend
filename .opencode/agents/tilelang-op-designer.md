@@ -98,7 +98,7 @@ conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为：
 | 循环与调度结构 | 明确 T.Parallel / T.serial / T.Pipelined / T.Persistent 的选择 | 返回 fail + `missing_section: Loop 结构` |
 | 同步策略 | 与编程模式匹配（Developer 用自动同步、Expert 标明手动同步点） | 返回 fail + `missing_section: 同步` |
 | 验证方案 | 含 golden 函数草案（PyTorch 参考实现） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |
-| 风险点 | 含技术约束检测结论（三维 Kernel、threads、动态边界、L0C 容量、GEMM 非整除等） | 返回 fail + `missing_section: 风险点` |
+| 风险点 | 含技术约束检测结论（三维 Kernel、L0C 容量、GEMM 非整除等） | 返回 fail + `missing_section: 风险点` |
 | 同类实现引用 | 列出至少 1 个 `examples/` 中的具体参考文件路径 | 返回 fail + `missing_section: 同类实现` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充`（已确认的除外） | 返回 fail + `placeholder_found` |
 | revision 模式专属 | 含"相对上一版的关键调整"和"为何不会再犯同一错误"的明确说明 | 返回 fail + `missing_section: 回退说明` |

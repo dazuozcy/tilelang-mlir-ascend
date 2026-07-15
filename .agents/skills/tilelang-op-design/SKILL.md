@@ -68,7 +68,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 本项目为 TileLang-NPUIR （后端为华为昇腾 NPU），与 GPU 版 TileLang 有显著差异。外部参考实现不可直接使用，必须转换为 Ascend 兼容方案。
 
-**生成 design.md 前必须执行强制检测**：三维 Kernel、threads 参数、动态循环边界、GPU 专用 API、GEMM 非整除、L0C 溢出等。
+**生成 design.md 前必须执行强制检测**：三维 Kernel、GPU 专用 API、GEMM 非整除、L0C 溢出等。
 
 详细已知限制清单、强制检测规则、警告输出模板见 [references/ascend-constraints.md](references/ascend-constraints.md)。
 
@@ -108,7 +108,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 5. Tiling 策略（**必含：非整除时 padding+crop 策略，或 Kernel 内动态 block 方案**）
 6. 循环与调度结构
 7. 同步策略
-8. CV 融合设计（**按模式分支**：Developer 默认消除 workspace/vid——`threads=2` + 片上直连，不产出 workspace 规格；仅 Expert/混合或复杂场景回退才设计 workspace + `workspace_idx`。详见 design-template.md §8.2）
+8. CV 融合设计（详见 design-template.md §8.2）
 9. 验证方案（Golden + **L0 门槛测试计划**；完整分层套件 L1/L2/Boundary 交由 `tilelang-op-test-design`，不在此枚举）
 10. 风险点与注意事项
 11. 交付清单
