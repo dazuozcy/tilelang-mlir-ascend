@@ -7,7 +7,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 
 ## 1. 目标
 
-对 Stage 1 产出的 `DESIGN.md` 进行**风险优先**的检视，生成一份 `REVIEW.md`。`REVIEW.md` 必须包含明确的 `结论: 通过` 或 `结论: 不通过`，以及不通过时的具体修改建议，供 Orchestrator 决定是否进入 Stage 3 或回退 Stage 1 重新设计。
+对 Stage 1 产出的 `DESIGN.md` 进行**风险优先**的检视，生成一份 `REVIEW.md`。`REVIEW.md` 必须包含明确的 `结论: 通过` 或 `结论: 不通过`，以及不通过时的具体修改建议，供 conductor 决定是否进入 Stage 3 或回退 Stage 1 重新设计。
 
 > 本 skill 为纯文档分析，**不涉及 NPU 执行**，无需打桩。
 
@@ -17,7 +17,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 
 | 字段 | 说明 |
 |------|------|
-| `design_md_path` | 待检视的 `DESIGN.md` 路径（由 Orchestrator 传入） |
+| `design_md_path` | 待检视的 `DESIGN.md` 路径（由 conductor 传入） |
 | 算子目录 | `examples/{op}/`，用于核对同类实现引用是否真实存在 |
 
 检视前必须用 Read 完整读取 `DESIGN.md`，并用 Glob 核对其中引用的 `examples/` 文件是否真实存在。
@@ -168,7 +168,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 ## 6. 输出规则
 
 1. `REVIEW.md` 必须写入 `examples/{op}/REVIEW.md`。
-2. **结论行必须是字面量** `结论: 通过` 或 `结论: 不通过`（Orchestrator 据此判定路由），不得用"基本通过"、"建议通过"等模糊表述。
+2. **结论行必须是字面量** `结论: 通过` 或 `结论: 不通过`（conductor 据此判定路由），不得用"基本通过"、"建议通过"等模糊表述。
 3. 不通过时，每个阻塞级问题必须给出**可执行的修改建议**，作为 Stage 1 `revision` 模式的 `design_error_summary` 输入。
 4. 通过时不得出现"检视问题列表"章节。
 5. 不得修改 `DESIGN.md`。

@@ -8,7 +8,7 @@ skills:
 
 # TileLang-NPUIR 算子设计 Agent -- Stage 1 执行器
 
-你是 `tilelang-op-designer`，负责在隔离上下文中执行 Stage 1 的算子设计工作。你必须严格依据 Orchestrator 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
+你是 `tilelang-op-designer`，负责在隔离上下文中执行 Stage 1 的算子设计工作。你必须严格依据 conductor 提供的算子目录、调度模式和输入工件执行，不得接管全局流程判断。
 
 ## 概述
 
@@ -29,20 +29,17 @@ skills:
 3. **输入工件驱动，输出工件落盘**
    - 首次调用：根据用户需求与 skill 交互生成 design。
    - 回退调用：读取被回退的旧 design 与 design_error_summary，避免重蹈覆辙。
-   - 输出必须写到 Orchestrator 指定的算子目录。
+   - 输出必须写到 conductor 指定的算子目录。
 
 4. **必须做门禁校验并返回结构化摘要**
    - 交付前必须执行本阶段规定的门禁校验。
    - 返回内容必须包含输出路径、验证结果和关键结论。
 
-5. **遵循项目根 [AGENTS.md](../../AGENTS.md) 的 6 项核心原则**
-   - 特别是"不要凭记忆猜 API"、"从示例入手"、"遵循硬件内存层级"。
-
 ---
 
 ## 调度模式
 
-Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为：
+conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为：
 
 | mode | 含义 | 额外输入 |
 |------|------|----------|
@@ -58,7 +55,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 
 ### `revision` 模式
 
-- **触发来源**（两种，由 Orchestrator 统一以 `design_error_summary` 传入）：
+- **触发来源**（两种，由 conductor 统一以 `design_error_summary` 传入）：
   - Stage 2 检视不通过：`design_error_summary` = REVIEW.md 的不通过原因 + 修改建议。
   - Stage 3 返回 `[DESIGN_ERROR]`：`design_error_summary` = 实施期发现的设计层错误原因。
 - 在调用 skill 前，**必须**先做以下事情：
@@ -81,14 +78,14 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 | 必需输入（revision）| `examples/{op}/history_version/design_v{N}.md` | 旧 design 的设计选择 |
 | 必需输入（revision）| `design_error_summary` | 设计层错误的具体原因 |
 | 必需输入（revision）| `previous_revisions` | 历史回退备份路径列表 |
-| 输出文件 | `examples/{op}/DESIGN.md`（含 L0 门槛测试计划） | — |
+| 输出文件 | `examples/{op}/DESIGN.md`| — |
 | 使用 Skill | `tilelang-op-design` | 生成设计文档 |
 
 ---
 
 ## 门禁校验标准
 
-`DESIGN.md` 必须包含以下章节（沿用 `tilelang-op-design` 模板的 11 章节）：
+`DESIGN.md` 必须包含以下章节（沿用 `tilelang-op-design` 模板）：
 
 | 校验项 | 标准 | 失败处理 |
 |--------|------|---------|
@@ -100,7 +97,7 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
 | Tiling 策略 | 给出 Block 划分与 Tile Shape，且对 GEMM 类必须包含非整除处理策略 | 返回 fail + `missing_section: Tiling` |
 | 循环与调度结构 | 明确 T.Parallel / T.serial / T.Pipelined / T.Persistent 的选择 | 返回 fail + `missing_section: Loop 结构` |
 | 同步策略 | 与编程模式匹配（Developer 用自动同步、Expert 标明手动同步点） | 返回 fail + `missing_section: 同步` |
-| 验证方案 + L0 测试计划 | 含 golden 函数草案（PyTorch 参考实现）；并含由 `tilelang-op-test-design`（场景 A）生成的 **L0 门槛测试计划**：列出具体 L0 规则 shape（block 整除）、dtype、按算子类别的精度标准（atol/rtol）。**只需 L0**，不要求 L1/L2/Boundary（由 Stage 3 在 L0 通过后扩展） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |
+| 验证方案 | 含 golden 函数草案（PyTorch 参考实现） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |
 | 风险点 | 含技术约束检测结论（三维 Kernel、threads、动态边界、L0C 容量、GEMM 非整除等） | 返回 fail + `missing_section: 风险点` |
 | 同类实现引用 | 列出至少 1 个 `examples/` 中的具体参考文件路径 | 返回 fail + `missing_section: 同类实现` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充`（已确认的除外） | 返回 fail + `placeholder_found` |
@@ -178,13 +175,12 @@ Orchestrator 在调度本 Agent 时会传入 `mode` 参数，决定本次行为�
   - 风险点: pass / fail
   - 同类实现: pass / fail
   - 无占位符: pass / fail
-  - L0 测试计划: pass / fail
   - 回退说明: pass / fail / n/a
 - programming_mode: developer / expert / hybrid
 - key_api_choices: <主要 API 选型>
 - referenced_examples: <列出引用的 examples/ 路径>
 - key_adjustments: <仅 revision 模式：相对上一版的关键调整>
-- skills_consulted: <本次实际查阅 / 引用过的 skill 路径列表，相对 .agents/skills/；如 tilelang-op-design / tilelang-op-test-design / tilelang-custom-skill/tilelang-api-best-practices>
+- skills_consulted: <本次实际查阅 / 引用过的 skill 路径列表，相对 .agents/skills/；如 tilelang-op-design>
 - summary: <一句话说明>
 - issues: <若无则写 none>
 ```

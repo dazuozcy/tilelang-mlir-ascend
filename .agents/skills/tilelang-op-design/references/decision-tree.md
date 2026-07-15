@@ -2,12 +2,14 @@
 
 ## 目录
 
-- [1. 函数设计原则](#1-函数设计原则)
-- [2. 决策树](#2-决策树)
-- [3. NPU 硬件约束](#3-npu-硬件约束)
-- [4. API 映射规则](#4-api-映射规则)
+- [算子特征分析决策树（Ascend 版）](#算子特征分析决策树ascend-版)
+  - [目录](#目录)
+  - [1. 函数设计原则](#1-函数设计原则)
+  - [2. 决策树](#2-决策树)
+  - [3. NPU 硬件约束](#3-npu-硬件约束)
+  - [4. API 映射规则](#4-api-映射规则)
 
-> 本项目为 TileLang-Ascend，与 GPU 版 TileLang 在 Kernel 维度、threads、循环边界、GEMM API、内存分配等方面有显著差异。完整对比与约束清单见 SKILL 子目录索引下的 `ascend-constraints.md`。外部参考实现仅用于理解数学逻辑，API 映射必须查阅本项目。
+> 本项目为 TileLang-NPUIR，与 GPU 版 TileLang 在 Kernel 维度、threads、循环边界、GEMM API、内存分配等方面有显著差异。完整对比与约束清单见 SKILL 子目录索引下的 `ascend-constraints.md`。外部参考实现仅用于理解数学逻辑，API 映射必须查阅本项目。
 
 ---
 
@@ -18,56 +20,45 @@
 
 ## 2. 决策树
 
-**重要**：`T.reduce_sum/max/min` 和 `T.tile.*` 在 Developer 和 Expert 模式下**都可使用**。模式选择取决于是否需要手动控制内存层级和同步，而非使用了哪个 API。
+**重要**：`T.reduce_sum/max/min` 在 Developer 和 Expert 模式下**都可使用**。模式选择取决于是否需要手动控制内存层级和同步，而非使用了哪个 API。
 
 ```
 算子数学公式
 ├─ 含 matmul / @ / 矩阵乘
 │   ├─ 仅 matmul → 纯 Cube
 │   │   模式: Developer (推荐) 或 Expert
-│   │   API: T.gemm_v0 / T.mma
+│   │   API: T.gemm
 │   │   内存: GM→L1→L0A/L0B→L0C→GM
-│   │   pass_configs: 全开启（Developer）
 │   │   Kernel: T.Kernel(任务数, is_npu=True) as (cid, _)
 │   │
 │   └─ matmul + element-wise 前处理/后处理 → CV 融合算子
-│       ├─ Developer 模式（推荐，默认消除 workspace/vid）
-│       │   模式: Developer + AUTO_CV_COMBINE
-│       │   API: T.tile.* (Vector) + T.gemm_v0 (Cube)
-│       │   内存: GM→L1→L0C→片上直连→UB→GM（默认无 workspace 中转）
-│       │   pass_configs: AUTO_SYNC + AUTO_CV_COMBINE + AUTO_CV_SYNC
-│       │   同步: AUTO_SYNC + AUTO_CV_SYNC 自动处理
-│       │   V 核: threads=2 自动并行（消 vid）；复杂场景才回退 workspace+vid
-│       │   写法: 见 tilelang-expert-to-developer mode-examples.md §6
+│       ├─ Developer 模式（推荐）
+│       │   模式: Developer
+│       │   API: T.npuir_* 或 T.v* (Vector) + T.gemm (Cube)
+│       │   内存: GM→L1→L0C→片上直连→UB→GM
+│       │   写法: 参考 examples/flash_attention/flash_attn_npuir_dev.py
 │       │
 │       ├─ Expert 模式（极致性能）
-│       │   模式: Expert + T.Scope("C"/"V") + T.set_cross_flag
-│       │   同步: 手动核间同步（T.set_cross_flag / T.wait_cross_flag）
+│       │   模式: Expert + T.Scope("C"/"V") + T.sync_block_set/wait
+│       │   同步: 手动核间同步（T.sync_block_set / T.sync_block_wait）
 │       │
-│    典型算子: W4A8 GEMM, Flash Attention, 量化 GEMM
+│    典型算子: Flash Attention
 │
 ├─ 纯 element-wise（逐元素运算）
-│   参考: examples/elementwise/*.py, examples/activation/*.py
+│   参考: examples/elementwise/*.py
 │   ├─ 单步运算 → Developer 模式
 │   │   API: T.Parallel + 算术符号
 │   │   内存: T.alloc_shared（编译器映射到 UB）
 │   │
-│   └─ 多步运算（如 softmax、layer_norm）
-│       参考: examples/softmax/*.py, examples/normalization/*.py
+│   └─ 多步运算（如 layer_norm）
+│       参考: examples/norm/*.py
 │       ├─ 需精细 buffer 控制 → Expert 模式
 │       └─ 无需精细控制 → Developer 模式
 │
 ├─ 含归约（reduce_sum / reduce_max / reduce_min）
-│   参考: examples/reduce/*.py
+│   参考: examples/norm/*.py
 │   API: T.reduce_sum / T.reduce_max / T.reduce_min
 │   内存: T.alloc_shared → UB
-│
-├─ 含分组/动态批次
-│   参考: examples/grouped_gemm/*.py（重要！）
-│   关键技术:
-│   - block_metadata 预计算表（替代三维 Kernel）
-│   - 静态循环边界 + 条件判断（替代动态边界）
-│   Kernel: T.Kernel(total_blocks) + 手动索引分解
 │
 └─ 其他复杂算子
     强制步骤: 先搜索本项目 examples/
@@ -93,7 +84,7 @@
    - L1: 512KB
    - UB: 192KB
 
-违反约束会导致编译错误或运行时错误。详见 `.agents/skills/tilelang-custom-skill/tilelang-api-best-practices/references/api-kernel-memory.md`。
+违反约束会导致编译错误或运行时错误。
 
 ## 4. API 映射规则
 
@@ -103,5 +94,4 @@
 | 内存分配（Expert）| `T.alloc_L1`, `T.alloc_L0C`, `T.alloc_ub` | - |
 | 内存分配（Developer）| `T.alloc_shared`, `T.alloc_fragment` | - |
 | Kernel | `T.Kernel(一维, is_npu=True)` | `T.Kernel(三维)` ❌ |
-| 同步 | `T.barrier_all()`, `T.Scope("C")` | 自动同步（Developer 模式） |
-| 循环 | `T.serial`, `T.unroll` | `T.Pipelined(动态边界)` ❌ |
+| 同步 | `with T.rs("PIPE_MTE3")`, `T.set_flag("PIPE_MTE3", task_id)`, `T.wait_flag("PIPE_MTE3", task_id)` | 自动同步（Developer 模式） |

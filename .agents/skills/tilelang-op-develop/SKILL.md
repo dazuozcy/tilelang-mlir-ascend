@@ -1,13 +1,13 @@
 ---
 name: tilelang-op-develop
-description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：kernel + golden + 分层测试套件 L0/L1/L2/Boundary），执行测试并返回三态判定。非 NPU 环境通过打桩验证端到端流程。触发：实现算子、生成 kernel、算子开发、跑精度。"
+description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：kernel + golden），执行测试并返回三态判定。触发：实现算子、生成 kernel、算子开发、跑精度。"
 ---
 
 # TileLang-NPUIR 算子开发与验证
 
 ## 1. 目标
 
-根据 Stage 1 冻结的 `DESIGN.md` 与 Stage 2 通过的 `REVIEW.md`，生成算子实现文件 `example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 L0/L1/L2/Boundary + main 入口），执行测试，并返回三态判定供 Orchestrator 路由。
+根据 Stage 1 冻结的 `DESIGN.md` 与 Stage 2 通过的 `REVIEW.md`，生成算子实现文件 `example_{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口），执行测试，并返回三态判定供 conductor 路由。
 
 > **关键约束**：本 skill 的产物 `example_{op}.py` 必须能在**非 NPU 环境**通过打桩跑通端到端精度流程。打桩规则见 [references/stub-harness.md](references/stub-harness.md)。
 
@@ -19,7 +19,7 @@ description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：k
 |------|------|
 | `design_md_path` | 冻结的 `DESIGN.md`（含 L0 测试计划） |
 | `review_md_path` | Stage 2 通过的 `REVIEW.md`（设计已检视通过） |
-| `mode` | `first_impl` / `retry_impl` / `precision_fix`（由 Orchestrator 传入） |
+| `mode` | `first_impl` / `retry_impl` / `precision_fix`（由 conductor 传入） |
 | `attempt_index` | 当前 Stage 3 attempt 序号 |
 | `last_failure_summary` | 重试时传入的失败信息（stderr 摘要 / 精度失败详情） |
 | `design_revision_count` | 设计修订次数（用于回退后清零判断） |
@@ -78,30 +78,20 @@ description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：k
 1. 按 DESIGN.md §8.1 生成 PyTorch CPU 参考实现 `golden_{op}(...)`。
 2. Golden 必须在 CPU 上可独立运行（不依赖 tilelang / torch_npu）。
 
-### Phase 4：生成测试套件（分层）
-按 DESIGN.md L0 计划 + 本 skill 扩展规则：
-
-| 层级 | 内容 | 生成时机 | 失败影响 |
-|------|------|----------|----------|
-| L0 | 门槛规则 shape（block 整除）、dtype、golden 对比 | 首次 `first_impl` 即生成 | 阻塞（→ precision_fix） |
-| L1 | 功能覆盖（含不规则 shape、多 dtype） | L0 通过后扩展 | 阻塞（→ precision_fix） |
-| L2 | 异常输入（空、超大、错误 dtype） | L0 通过后扩展 | 仅记录，不阻塞 |
-| Boundary | 特殊值（0、inf、nan、极小/极大） | L0 通过后扩展 | 仅记录，不阻塞 |
-
-### Phase 5：执行测试（含打桩分支）
+### Phase 4：执行测试（含打桩分支）
 1. 检测 `TILELANG_OP_STUB_NPU`。
 2. 跑 L0：`python example_{op}.py --level L0`（打桩时 golden 充当输出，精度通过）。
 3. L0 通过后扩展 L1/L2/Boundary 并跑全量 `--level all`。
 4. 收集结果：max_diff、失败用例 shape、层级。
 
-### Phase 6：三态判定与返回
+### Phase 5：三态判定与返回
 
 | 条件 | 返回标记 |
 |------|----------|
-| L0 + L1 全过（L2/Boundary 告警仅记录） | `[PRECISION_PASS]` |
-| L0 或 L1 未过 | `[PRECISION_FAIL]` |
+| 输出与 golden 函数输出对比精度正常 | `[PRECISION_PASS]` |
+| 输出与 golden 函数输出对比精度正常  未过 | `[PRECISION_FAIL]` |
 | 发现设计层错误（API 不可用、L0C 溢出、内存层级冲突等实现层无法修复） | `[DESIGN_ERROR]` + 原因 |
-| 无标记且 exit code ≠ 0 | 运行失败（Orchestrator 按 retry_impl 路由） |
+| 无标记且 exit code ≠ 0 | 运行失败（conductor 按 retry_impl 路由） |
 
 ---
 
@@ -114,8 +104,8 @@ description: "根据冻结的 DESIGN.md 生成算子实现（example_{op}.py：k
 # 2. [STUB: NPU-EXEC] 打桩开关区
 # 3. golden_{op}(...) 函数
 # 4. @tilelang.jit kernel（if not STUB_NPU: 守卫，源码完整保留）
-# 5. 分层测试函数：run_L0() / run_L1() / run_L2() / run_boundary()
-# 6. main()：argparse --level {L0|all}，按 level 调用对应测试
+# 5. 精度对比函数：run_case()
+# 6. main()
 ```
 
 完整可运行模板见 [examples/example_template.py](examples/example_template.py)。
@@ -142,7 +132,7 @@ def main():
 
 | 失败类型 | 识别 | 处理 |
 |---------|------|------|
-| 编译错误（实现层） | stderr 含 lowering/codegen 错误 | 返回运行失败 + stderr 摘要，Orchestrator 走 retry_impl |
+| 编译错误（实现层） | stderr 含 lowering/codegen 错误 | 返回运行失败 + stderr 摘要，conductor 走 retry_impl |
 | API 不存在 | `AttributeError` / 设计用 API 无导出 | 返回 `[DESIGN_ERROR]` + 原因 |
 | L0C/UB 溢出 | 编译期或运行期报容量超限 | 返回 `[DESIGN_ERROR]` + 原因 |
 | 精度不达标 | `assert_close` 失败 | 返回 `[PRECISION_FAIL]` + max_diff/失败 shape |
