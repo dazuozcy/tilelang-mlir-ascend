@@ -1,6 +1,6 @@
 ---
 name: tilelang-op-optimizer
-description: "TileLang-NPUIR 算子调优 Subagent。负责 Stage 4 性能调优，调用 tilelang-op-optimize skill 产出 kernel_opt.py 与调优日志。非 NPU 环境对性能测量打桩以验证端到端流程。"
+description: "TileLang-NPUIR 算子调优 Subagent。负责 Stage 4 性能调优，调用 tilelang-op-optimize skill 产出 kernel_opt.py 与调优日志。"
 mode: subagent
 skills:
   - tilelang-op-optimize
@@ -14,7 +14,7 @@ skills:
 
 本 Agent 处理一类产物：`perf_tuning/kernel_opt.py` + `perf_tuning/tuning_log.md`。由 `tilelang-op-optimize` skill 完成基线分析、优化迭代、性能测量与中止判定。
 
-> **打桩背景**：当前环境无 NPU，性能 profiling 无法真实执行，对**性能测量**打桩（返回模拟递减数据）。调优分析（瓶颈识别、策略选择）不打桩，保持真实推理。打桩规则见 skill 的 SKILL.md §3。
+> **环境前提**：本 Agent 运行在已具备 NPU 设备的环境中，性能 profiling 在 NPU 上真实执行。调优分析（瓶颈识别、优化策略）与性能测量均为真实结果。
 
 ## 核心原则
 
@@ -61,10 +61,8 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 
 满足任一即结束并返回 `TUNING_COMPLETED`：
 1. 迭代次数达到用户指定上限（默认 10）。
-2. 连续三次无性能提升（打桩模式不触发，因模拟值恒递减）。
+2. 连续三次无性能提升。
 3. 达到用户指定的性能目标（latency ≤ 目标 / throughput ≥ 目标 / 优于 baseline）。
-
-> **打桩模式**：`TILELANG_OP_STUB_NPU=1` / `TILELANG_OP_STUB_PERF=1` 时，性能数据为模拟递减值（每轮约 -15%），用于验证迭代/中止/交付逻辑。返回摘要必须如实标注 `stub_mode: true`。
 
 ---
 
@@ -73,8 +71,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 | 校验项 | 标准 | 失败处理 |
 |--------|------|---------|
 | kernel_opt.py 存在 | 写入 perf_tuning/ 目录 | 返回 fail + `missing_output` |
-| 打桩区完整 | kernel_opt.py 含 `TILELANG_OP_STUB_NPU` 打桩区（与 Stage 3 一致）+ 调优日志含 `[STUB: PERF-MEASURE]` 标记 | 返回 fail + `missing_stub_harness` |
-| 精度未退化 | kernel_opt.py 跑 L0 通过（打桩或真实） | 返回 fail + `precision_regression` |
+| 精度未退化 | kernel_opt.py 跑 L0 通过 | 返回 fail + `precision_regression` |
 | 调优日志完整 | tuning_log.md 含基线、各迭代记录、结论 | 返回 fail + `incomplete_log` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充` | 返回 fail + `placeholder_found` |
 
@@ -98,9 +95,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 2. 不得修改 `DESIGN.md` / `example_{op}.py` 等上游工件（只读基线，产物写入 `perf_tuning/`）。
 3. 不得写入全局状态、重试计数、BLOCKED / SUCCESS 等编排层信息。
 4. 不得在 Subagent 上下文调用 `AskUserQuestion` 直接问用户。
-5. **打桩标记必须完整**：性能测量打桩点用 `[STUB: PERF-MEASURE]`，kernel 执行打桩点用 `[STUB: NPU-EXEC]`。
-6. **调优不逆向反馈**：性能不足时自完成最优版本，不回退到 Stage 3/1。
-7. 返回摘要必须如实标注 `stub_mode`。
+5. **调优不逆向反馈**：性能不足时自完成最优版本，不回退到 Stage 3/1。
 
 ---
 
@@ -120,7 +115,6 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 - final_latency: {v} us
 - improvement: {x}%
 - stop_reason: 达目标 / 迭代上限 / 连续无提升
-- stub_mode: true / false
 - skills_consulted: <引用的 skill 路径>
 - summary: <一句话>
 - issues: <若无则 none>

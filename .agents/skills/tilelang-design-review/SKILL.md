@@ -9,8 +9,6 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 
 对 Stage 1 产出的 `DESIGN.md` 进行**风险优先**的检视，生成一份 `REVIEW.md`。`REVIEW.md` 必须包含明确的 `结论: 通过` 或 `结论: 不通过`，以及不通过时的具体修改建议，供 conductor 决定是否进入 Stage 3 或回退 Stage 1 重新设计。
 
-> 本 skill 为纯文档分析，**不涉及 NPU 执行**，无需打桩。
-
 ---
 
 ## 2. 输入
