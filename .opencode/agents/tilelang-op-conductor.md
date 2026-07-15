@@ -29,7 +29,7 @@ mode: primary
 | 1 算子设计 | `DESIGN` | `@tilelang-op-designer` | `DESIGN.md` | `DESIGN_COMPLETED` |
 | 2 设计检视 | `REVIEW` | `@tilelang-design-reviewer` | `REVIEW.md` | `REVIEW_COMPLETED` |
 | 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `example_{op}.py` | `DEVELOP_COMPLETED` |
-| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `example_{op}_opt.py` | `TUNING_COMPLETED` |
+| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_tuning/kernel_opt.py` | `TUNING_COMPLETED` |
 
 ### 正常端到端流程
 
@@ -173,7 +173,7 @@ sequenceDiagram
 
 - **触发条件**：开发完成且用户确认需要性能调优
 - **输入**：`kernel_py_path`
-- **输出/交付件**：`example_{op}_opt.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
+- **输出/交付件**：`perf_tuning/kernel_opt.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`TUNING_COMPLETED`，触发任务完结（`phase=DONE`）
 
 ---
@@ -253,7 +253,9 @@ examples/{op}/
 ├── REVIEW.md                     # Stage 2 产物
 ├── example_{op}.py               # Stage 3 产物（kernel + 内嵌 golden + main 块）
 ├── README.md                     # Stage 3 产物（可选）
-├── example_{op}_opt.py           # Stage 4 产物（kernel + 内嵌 golden + main 块）
+├── perf_tuning/                  # Stage 4 产物目录
+│   ├── kernel_opt.py             #   最优版本（kernel + 内嵌 golden + main 块）
+│   └── tuning_log.md             #   调优日志
 ├── history_version/              # 设计修订备份（design_v{N}.md）+ Stage 3 精度调试备份
 └── .stage_state.json      # conductor 专属状态文件
 ```
@@ -266,7 +268,8 @@ examples/{op}/
 | `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议 |
 | `example_{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
-| `example_{op}_opt.py` | Stage 3 | Stage 4 （自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
+| `perf_tuning/kernel_opt.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
+| `perf_tuning/tuning_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
 | `history_version/` | Stage 1/3 | conductor | 设计修订前 design 备份、精度调试前 impl 备份 |
 | `.stage_state.json` | conductor | conductor | 全局状态 |
 
@@ -377,9 +380,9 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 | `[PRECISION_FAIL]` | `precision_fix` | Stage 3 内重试（L0 或 L1 未达标）。把失败信息作为 `last_failure_summary` 传入。**强制要求 Developer 先备份当前 impl 到 `history_version/{op}_impl_s3_attempt{N}.py` 再做修改** |
 | `[DESIGN_ERROR]` | — | 触发设计修订循环（路径 B，计 `retry_count`） |
 | 无标记且 exit code ≠ 0 | `retry_impl` | Stage 3 内重试，将 stderr 摘要作为 `last_failure_summary` 传入 |
-| 首次进入 Stage 3 | `first_impl` | 调 `tilelang-op-generate` 从零生成 kernel + L0 用例，先跑 L0 |
+| 首次进入 Stage 3 | `first_impl` | 调 `tilelang-op-develop` skill 从零生成 kernel + L0 用例，先跑 L0 |
 
-> **分层测试**：Stage 3 每次 attempt 先只跑 L0 做精度收敛；L0 通过后 Developer 调用 `tilelang-op-test-design`（场景 B）扩展 L1/L2/Boundary 并跑全量。**L0/L1 失败**才算精度未达标（走 `precision_fix`）；**L2（异常）/ Boundary（特殊值）失败仅记录到 `debug_log.md` 与覆盖率报告，不阻塞 `[PRECISION_PASS]`**。
+> **分层测试**：Stage 3 每次 attempt 先只跑 L0 做精度收敛；L0 通过后 Developer 调用 `tilelang-op-develop` skill 扩展 L1/L2/Boundary 并跑全量。**L0/L1 失败**才算精度未达标（走 `precision_fix`）；**L2（异常）/ Boundary（特殊值）失败仅记录到 `debug_log.md` 与覆盖率报告，不阻塞 `[PRECISION_PASS]`**。
 
 调度规则：
 - 累计 attempt 上限 **5 次**（`stage_retry_count[3]`）：因运行失败超限 → `BLOCKED_IMPL`；因精度失败超限 → `BLOCKED_ACCURACY`。
@@ -461,7 +464,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ### Stage 4 中止条件
 
-满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `example_{op}_opt.py`（或最优版本）。
+满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `perf_tuning/kernel_opt.py`（或最优版本）。
 
 ---
 
@@ -480,7 +483,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
   "design_md_path": "examples/{op}/DESIGN.md",
   "review_md_path": "examples/{op}/REVIEW.md",
   "kernel_py_path": "examples/{op}/example_{op}.py",
-  "kernel_opt_py_path": "examples/{op}/example_{op}_opt.py",
+  "kernel_opt_py_path": "examples/{op}/perf_tuning/kernel_opt.py",
   "retry_count": 0,
   "max_retry": 3,
   "final_artifact": null,

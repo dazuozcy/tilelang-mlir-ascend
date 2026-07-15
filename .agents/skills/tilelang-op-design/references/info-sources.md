@@ -33,8 +33,8 @@ grep "T.Scope\|T.barrier" examples/{同类实现}  # 同步方式
 ## 2. 信息收集步骤
 
 1. 查阅 `examples/` 中同类算子实现（**强制步骤 0**）
-2. 查阅 `.agents/skills/tilelang-custom-skill/tilelang-api-best-practices/SKILL.md` 确认 API 可用性和用法
-3. 查阅 `.agents/skills/tilelang-custom-skill/tilelang-expert-to-developer/SKILL.md` 确认编程模式和 pass_configs 配置
+2. 查阅 `docs/Tilelang.language/` 确认 API 可用性和用法（按 AGENTS.md 文档路由规则）
+3. 查阅 `docs/开发指南.md` 确认编程模式和 pass_configs 配置
 4. 如有参考实现，分析其计算步骤（**仅用于理解数学逻辑，不可直接使用 API**）
 
 ## 3. 禁止行为
@@ -48,12 +48,11 @@ grep "T.Scope\|T.barrier" examples/{同类实现}  # 同步方式
 |--------|--------|------|------|
 | **0** | **本项目 `examples/` 同类实现** | **主要参考：API、编程模式、Kernel 结构** | **最权威**，直接可用 |
 | 1 | `docs/开发指南.md` | API 完整说明 | 补充细节 |
-| 2 | `.agents/skills/tilelang-custom-skill/tilelang-api-best-practices/SKILL.md` | API 速查 | 快速确认 |
+| 2 | `docs/Tilelang.language/` | API 语义与签名速查 | 按 AGENTS.md 文档路由规则 |
 | 3 | `testing/python/language/` | 边界用法和测试模式参考 | 测试参考 |
 | 4 | **外部参考实现** | **仅用于理解数学逻辑** | **不可直接使用 API** |
-| 5 | `.agents/skills/tilelang-custom-skill/tilelang-expert-to-developer/SKILL.md` | 模式选择 | 辅助决策 |
-| 6| `tilelang/language/__init__.py` + `tilelang/language/*.py` | 公开 API 导出关系与前端定义 | API 定义 |
-| 7 | `src/op/` + `src/target/` | lowering 与后端实现状态 | 实现验证 |
+| 5 | `tilelang/language/__init__.py` + `tilelang/language/*.py` | 公开 API 导出关系与前端定义 | API 定义 |
+| 6 | `src/op/` + `src/target/` | lowering 与后端实现状态 | 实现验证 |
 
 
 **规则**：当信息源之间矛盾时，以 `examples/` 为准。若 `examples/` 未覆盖，以 `docs/` 为准。若 `docs/` 未覆盖，以 `tilelang/language/` 源码实际实现为准。

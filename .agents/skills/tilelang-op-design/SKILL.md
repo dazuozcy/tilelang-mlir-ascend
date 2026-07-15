@@ -1,13 +1,13 @@
 ---
 name: tilelang-op-design
-description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（design.md）。涵盖编程模式选型（Developer/Expert/混合）、API 映射、内存层级规划、Tiling 策略、循环结构、同步策略、验证方案等。触发：设计算子、生成 design.md、算子方案设计、新算子开发、算子实现方案。"
+description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIGN.md）。涵盖编程模式选型（Developer/Expert/混合）、API 映射、内存层级规划、Tiling 策略、循环结构、同步策略、验证方案等。触发：设计算子、生成 DESIGN.md、算子方案设计、新算子开发、算子实现方案。"
 ---
 
 # TileLang-NPUIR 算子设计文档生成
 
 ## 1. 目标
 
-根据算子需求信息，生成一份完整的 TileLang-NPUIR 算子设计文档（`design.md`），涵盖以下核心决策：
+根据算子需求信息，生成一份完整的 TileLang-NPUIR 算子设计文档（`DESIGN.md`），涵盖以下核心决策：
 
 - **编程模式选型**：Developer / Expert / 混合模式
 - **API 映射**：将数学公式拆解为 TileLang DSL 原语组合
@@ -37,7 +37,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 
 **提问规则（必须严格遵守）**：
-1. **优先使用调用方传入的字段**：若调用方（如 `@tilelang-op-conductor` 通过 designer 传入 `op_requirements` 结构）已经提供了字段值，**全部跳过提问**，直接进入技术约束检测和 design 生成
+1. **优先使用调用方传入的字段**：若调用方（如 `@tilelang-op-conductor` 通过 designer 传入 `op_requirements` 结构）已经提供了字段值，**全部跳过提问**，直接进入技术约束检测和 DESIGN.md 生成
 2. **每次只询问一个字段**：使用 `question` 工具时，`questions` 数组中只包含一个元素
 3. **按表格顺序依次询问**：算子名称 → 数学公式 → 输入张量规格 → 输出张量规格 → 编程模式偏好
 4. **已提供的字段跳过**：如果用户在初始请求中已提供某个字段的值，跳过该字段继续下一个
@@ -68,7 +68,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 本项目为 TileLang-NPUIR （后端为华为昇腾 NPU），与 GPU 版 TileLang 有显著差异。外部参考实现不可直接使用，必须转换为 Ascend 兼容方案。
 
-**生成 design.md 前必须执行强制检测**：三维 Kernel、GPU 专用 API、GEMM 非整除、L0C 溢出等。
+**生成 DESIGN.md 前必须执行强制检测**：三维 Kernel、GPU 专用 API、GEMM 非整除、L0C 溢出等。
 
 详细已知限制清单、强制检测规则、警告输出模板见 [references/ascend-constraints.md](references/ascend-constraints.md)。
 
@@ -85,7 +85,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
      - 纯 Vector（element-wise / reduction）→ 仅需 UB
      - 纯 Cube（仅 matmul）→ 需要 L1 + L0A/L0B/L0C
      - 混合（matmul + element-wise 后处理）→ 核间流水线，需要 CV 融合
-     - **Host 预处理**：如 im2col 等 Python 侧预处理步骤，标明在 design 的 §1 和 §4 中
+      - **Host 预处理**：如 im2col 等 Python 侧预处理步骤，标明在 DESIGN.md 的 §1 和 §4 中
    - **复杂度级别**：
      - 单步（如 element-wise add）→ 无循环、单次搬运
      - 多步（如 softmax = max + sub + exp + sum + div）→ 多次计算、可能需要中间缓冲
@@ -97,7 +97,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 **必须执行强制步骤 0：搜索本项目同类实现**。详细工具调用、信息收集步骤、禁止行为见 [references/info-sources.md](references/info-sources.md)。
 
-### Phase 3：生成 design.md
+### Phase 3：生成 DESIGN.md
 
 基于 [examples/design-template.md](examples/design-template.md) 模板，填充所有章节：
 
@@ -109,7 +109,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 6. 循环与调度结构
 7. 同步策略
 8. CV 融合设计（详见 design-template.md §8.2）
-9. 验证方案（Golden + **L0 门槛测试计划**；完整分层套件 L1/L2/Boundary 交由 `tilelang-op-test-design`，不在此枚举）
+9. 验证方案（Golden + **L0 门槛测试计划**；完整分层套件 L1/L2/Boundary 交由 `tilelang-op-develop`，不在此枚举）
 10. 风险点与注意事项
 11. 交付清单
 
@@ -123,7 +123,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 ### Phase 6：输出
 
-将 `design.md` 输出到当前目录或用户指定路径。若文件已存在，询问是否覆盖。
+将 `DESIGN.md` 输出到当前目录或用户指定路径。若文件已存在，询问是否覆盖。
 
 ---
 
@@ -165,4 +165,4 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（desig
 
 ## 子目录索引
 
-- [examples/design-template.md](examples/design-template.md) — design.md 完整模板
+- [examples/design-template.md](examples/design-template.md) — DESIGN.md 完整模板
