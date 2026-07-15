@@ -77,6 +77,25 @@ $$
 | ... | ... | ... | ... | ... |
 
 ### 3.3 计算伪代码
+如果迁移前的`TIR原语函数`签名中`T.Tensor`通过关键字参数`dtype=`传递数据类型，改为将数据类型直接作为第二个位置参数传入，不再使用`dtype=`关键字。
+这是为了避免产生类似`error: name 'in_dtype' is not defined`报错信息但编译执行正常的`false alarm`。
+举例来说, 原来写法：
+```python
+@T.prim_func
+def tilelang_kernel(
+    input: T.Tensor((M, N), dtype=in_dtype),
+    result: T.Tensor((M, N), dtype=out_dtype),
+)
+```
+修改后：
+```
+@T.prim_func
+def tilelang_kernel(
+    input: T.Tensor((M, N), in_dtype),
+    result: T.Tensor((M, N), out_dtype),
+)
+```
+注意，这个修改并不违反"迁移执行规则"中的第3条。
 
 ```python
 # 基于 TileLang API 的计算流程伪代码
