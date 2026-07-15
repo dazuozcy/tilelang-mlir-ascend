@@ -107,9 +107,6 @@ with T.Kernel(block_num, is_npu=True) as (cid, _):
 | 约束 | 本算子是否涉及 | 处理方案 |
 |------|---------------|----------|
 | 不支持三维 Kernel | {Yes/No} | {block_metadata 方案 / 不涉及} |
-| threads 参数限制（仅 1 或 2） | {Yes/No} | {threads=2 或移除 / 不涉及} |
-| 动态循环边界不支持 | {Yes/No} | {静态边界 + if 条件判断 / 不涉及} |
-| 流水线不支持动态边界 | {Yes/No} | {改用 T.serial / 不涉及} |
 
 ### 3.5.2 参考实现差异说明
 
@@ -118,10 +115,8 @@ with T.Kernel(block_num, is_npu=True) as (cid, _):
 | 差异项 | 参考实现（GPU） | 本项目（Ascend） | 转换方案 |
 |--------|----------------|-----------------|----------|
 | Kernel 维度 | {三维 T.Kernel(m, n, batch)} | {一维 + block_metadata} | {参考 examples/grouped_gemm/} |
-| 循环边界 | {动态 T.Pipelined(batch_sizes[bz])} | {静态 + if k < k_iters} | {预计算 max_iters} |
 | GEMM API | {T.gemm} | {T.gemm_v0} | {查阅 api-compute.md} |
 | 内存分配 | {T.alloc_shared 自动映射} | {T.alloc_L1 显式层级} | {Expert 模式} |
-| threads | {threads=128} | {threads=2 或移除} | {NPU 限制} |
 
 ### 3.5.3 本项目同类实现参考
 
@@ -193,9 +188,6 @@ UB[c_ub] --后处理--> UB[c_ub] --T.copy--> GM[C]
 ```python
 @tilelang.jit(
     out_idx=[{输出索引}],
-    pass_configs={
-        {pass 配置项}
-    },
 )
 ```
 
@@ -243,7 +235,7 @@ block_num = (M // block_M) * (N // block_N)
 
 ```python
 # Block 级并行（隐式，由 T.Kernel 管理）
-with T.Kernel(block_num, is_npu=True) as (cid, vid):
+with T.Kernel(block_num, is_npu=True) as (cid, _):
     {block 内循环结构}
 ```
 
@@ -349,6 +341,6 @@ examples/{算子名}/
 
 ### 10.4 实现顺序
 
-1. ✅ 设计文档（design.md）+ L0 门槛测试计划（本文件 §9.2）
+1. ✅ 设计文档（design.md）
 2. ⬜ Golden 函数（验证基准）
-3. ⬜ 算子实现（example_{算子名}.py）+ 内嵌 L0 用例
+3. ⬜ 算子实现（example_{算子名}.py）+ 与Golden函数精度比对
