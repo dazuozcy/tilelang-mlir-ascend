@@ -71,7 +71,7 @@ description: "根据冻结的 DESIGN.md 生成算子实现（{op}.py：kernel + 
 # 5. main()
 ```
 
-完整可运行模板见 [examples/example_template.py](examples/example_template.py)。
+完整可运行模板见 [templates/op_template.py](templates/op_template.py).
 
 ### main 块结构
 
