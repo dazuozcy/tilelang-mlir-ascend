@@ -100,7 +100,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 ### Phase 3：生成 DESIGN.md
 
-基于 [examples/design-template.md](examples/design-template.md) 模板，填充所有章节：
+基于 [templates/design-template.md](templates/design-template.md) 模板，填充所有章节：
 
 1. 概述
 2. 编程模式选型
@@ -154,7 +154,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 ## 8. 完成报告
 
-文档生成完成后，按 [examples/completion-report-template.md](examples/completion-report-template.md) 输出报告。
+文档生成完成后，按 [templates/report-template.md](templates/report-template.md) 输出报告。
 
 ---
 
@@ -166,4 +166,4 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 ## 子目录索引
 
-- [examples/design-template.md](examples/design-template.md) — DESIGN.md 完整模板
+- [templates/design-template.md](templates/design-template.md) — DESIGN.md 完整模板
