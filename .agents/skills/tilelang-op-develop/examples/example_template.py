@@ -1,7 +1,11 @@
-"""{op}.py template
+"""{op}.py template (Spec-Driven)
 
 This template takes elementwise_add as an example operator.
 When generating an actual operator, replace the relevant kernel/golden/test use cases.
+
+Each test case is annotated with the SPEC.md Acceptance Contract (AC) clause it validates,
+enabling traceability from test back to spec. Precision thresholds come from AC-1.
+
 run: python example_template.py --level all
 """
 
@@ -11,12 +15,12 @@ import tilelang
 import tilelang.language as T
 
 
-# ---------- Golden (PyTorch CPU reference implementation) ----------
+# ---------- Golden (AC-6: PyTorch CPU reference implementation) ----------
 def golden_add(x, y):
     return x + y
 
 
-# ---------- Kernel ----------
+# ---------- Kernel (conforms to IC-5: Kernel entry signature) ----------
 @tilelang.jit(out_idx=[-1], target="npuir")
 def add_kernel(M, N, block_M, block_N, in_dtype="float32", out_dtype="float32"):
     @T.prim_func
@@ -41,8 +45,14 @@ def add_kernel(M, N, block_M, block_N, in_dtype="float32", out_dtype="float32"):
     return _main
 
 
-# ---------- hierarchical testing ----------
-def _run_case(M, N, dtype, tag):
+# ---------- AC-traced hierarchical testing ----------
+# Precision threshold (AC-1): fp32 atol=1e-2, rtol=1e-2 (tune per AC-1 in SPEC.md)
+RTOL = 1e-2
+ATOL = 1e-2
+
+
+def _run_case(M, N, dtype, tag, ac_id):
+    # ac_id: the SPEC.md Acceptance Contract clause this case validates (traceability)
     a = torch.randn(M, N, dtype=dtype, device="npu")
     b = torch.randn(M, N, dtype=dtype, device="npu")
     kernel = add_kernel(
@@ -52,35 +62,39 @@ def _run_case(M, N, dtype, tag):
     )
     c = kernel(a, b)
     golden = golden_add(a, b)
-    torch.testing.assert_close(c, golden, rtol=1e-2, atol=1e-2)
-    print(f"[{tag}] PASS: shape=({M},{N}) dtype={dtype}")
+    torch.testing.assert_close(c, golden, rtol=RTOL, atol=ATOL)
+    print(f"[{tag}] {ac_id} PASS: shape=({M},{N}) dtype={dtype}")
 
 
+# AC-2: L0 regular shapes (block-divisible)
 def run_L0():
     for M, N in [(128, 128), (256, 256)]:
-        _run_case(M, N, torch.float32, "L0")
+        _run_case(M, N, torch.float32, "L0", "AC-2")
 
 
+# AC-3: L1 non-divisible / medium scale (exercises ID-3 tail handling)
 def run_L1():
     for M, N in [(130, 130), (64, 200)]:
-        _run_case(M, N, torch.float32, "L1")
+        _run_case(M, N, torch.float32, "L1", "AC-3")
 
 
+# AC-4: L2 abnormal / tiny (WARN only, does not block)
 def run_L2():
     try:
-        _run_case(1, 1, torch.float32, "L2")
+        _run_case(1, 1, torch.float32, "L2", "AC-4")
     except Exception as e:
-        print(f"[L2] WARN (Record without blocking): {e}")
+        print(f"[L2] AC-4 WARN (Record without blocking): {e}")
 
 
+# AC-5: Boundary special values (WARN only, does not block)
 def run_boundary():
     a = torch.zeros(128, 128, dtype=torch.float32, device="npu")
     b = torch.zeros(128, 128, dtype=torch.float32, device="npu")
     kernel = add_kernel(128, 128, block_M=32, block_N=32)
     c = kernel(a, b)
     golden = golden_add(a, b)
-    torch.testing.assert_close(c, golden, rtol=1e-2, atol=1e-2)
-    print("[Boundary] PASS: zeros")
+    torch.testing.assert_close(c, golden, rtol=RTOL, atol=ATOL)
+    print("[Boundary] AC-5 PASS: zeros")
 
 
 def main():
