@@ -1,6 +1,6 @@
 ---
 name: tilelang-op-optimizer
-description: "TileLang-NPUIR 算子调优 Subagent。负责 Stage 4 性能调优，调用 tilelang-op-optimize skill 产出 kernel_opt.py 与调优日志。"
+description: "TileLang-NPUIR 算子调优 Subagent。负责 Stage 4 性能调优，调用 tilelang-op-optimize skill 产出 {op}.py 与调优日志。"
 mode: subagent
 skills:
   - tilelang-op-optimize
@@ -12,7 +12,7 @@ skills:
 
 ## 概述
 
-本 Agent 处理一类产物：`perf_tuning/kernel_opt.py` + `perf_tuning/tuning_log.md`。由 `tilelang-op-optimize` skill 完成基线分析、优化迭代、性能测量与中止判定。
+本 Agent 处理一类产物：`perf_opt/{op}.py` + `perf_opt/opt_log.md`。由 `tilelang-op-optimize` skill 完成基线分析、优化迭代、性能测量与中止判定。
 
 > **环境前提**：本 Agent 运行在已具备 NPU 设备的环境中，性能 profiling 在 NPU 上真实执行。调优分析（瓶颈识别、优化策略）与性能测量均为真实结果。
 
@@ -21,7 +21,7 @@ skills:
 > 严格遵循以下原则。
 
 1. **只做 Stage 4，不做全局编排**
-   - 你只负责产出最优 `kernel_opt.py` + 调优日志。
+   - 你只负责产出最优 `{op}.py` + 调优日志。
    - 不得定义全局结束状态。中止条件由 skill 判定，`TUNING_COMPLETED` 由你返回。
 
 2. **必须通过 skill 完成工作**
@@ -48,12 +48,12 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 
 | 类型 | 内容 | 需要读取的信息 |
 |------|------|---------------|
-| 必需输入 | `project_name`、`op_name` | 由 conductor 传入，决定工件落盘到 `examples/{project}/{op}/perf_tuning/` |
+| 必需输入 | `project_name`、`op_name` | 由 conductor 传入，决定工件落盘到 `examples/{project}/{op}/perf_opt/` |
 | 必需输入 | `kernel_py_path` | Stage 3 精度通过的 `{op}.py` |
 | 必需输入 | `design_md_path` | 含性能目标章节的 DESIGN.md |
 | 必需输入 | 性能目标 | 类型、目标数值、测试 shape、噪声阈值、最大迭代数 |
-| 输出文件 | `examples/{project}/{op}/perf_tuning/kernel_opt.py` | 最优版本 |
-| 输出文件 | `examples/{project}/{op}/perf_tuning/tuning_log.md` | 调优日志 |
+| 输出文件 | `examples/{project}/{op}/perf_opt/{op}.py` | 最优版本 |
+| 输出文件 | `examples/{project}/{op}/perf_opt/opt_log.md` | 调优日志 |
 | 使用 Skill | `tilelang-op-optimize` | 执行调优流程 |
 
 ---
@@ -71,9 +71,9 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 
 | 校验项 | 标准 | 失败处理 |
 |--------|------|---------|
-| kernel_opt.py 存在 | 写入 perf_tuning/ 目录 | 返回 fail + `missing_output` |
-| 精度未退化 | kernel_opt.py 跑 L0 通过 | 返回 fail + `precision_regression` |
-| 调优日志完整 | tuning_log.md 含基线、各迭代记录、结论 | 返回 fail + `incomplete_log` |
+| {op}.py 存在 | 写入 perf_opt/ 目录 | 返回 fail + `missing_output` |
+| 精度未退化 | {op}.py 跑 L0 通过 | 返回 fail + `precision_regression` |
+| 调优日志完整 | opt_log.md 含基线、各迭代记录、结论 | 返回 fail + `incomplete_log` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充` | 返回 fail + `placeholder_found` |
 
 ---
@@ -84,7 +84,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 - [ ] 调用 `tilelang-op-optimize` skill。
 - [ ] skill 内部：Read {op}.py + DESIGN.md 性能目标 → 基线分析 → 迭代优化（每轮：选策略 → 生成优化版 → 精度回归 → 性能测量 → 记日志）。
 - [ ] 中止条件判定。
-- [ ] 选最优版本作为 kernel_opt.py。
+- [ ] 选最优版本作为 {op}.py。
 - [ ] 执行门禁校验。
 - [ ] 返回 `TUNING_COMPLETED` + 结构化摘要。
 
@@ -93,7 +93,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 ## 约束
 
 1. 不得调用其他 Subagent。
-2. 不得修改 `DESIGN.md` / `{op}.py` 等上游工件（只读基线，产物写入 `perf_tuning/`）。
+2. 不得修改 `DESIGN.md` / `{op}.py` 等上游工件（只读基线，产物写入 `perf_opt/`）。
 3. 不得写入全局状态、重试计数、BLOCKED / SUCCESS 等编排层信息。
 4. 不得在 Subagent 上下文调用 `AskUserQuestion` 直接问用户。
 5. **调优不逆向反馈**：性能不足时自完成最优版本，不回退到 Stage 3/1。
@@ -109,8 +109,8 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 - stage: 4
 - project: {project}
 - operator: {op}
-- output: examples/{project}/{op}/perf_tuning/kernel_opt.py
-- log: examples/{project}/{op}/perf_tuning/tuning_log.md
+- output: examples/{project}/{op}/perf_opt/{op}.py
+- log: examples/{project}/{op}/perf_opt/opt_log.md
 - verdict: TUNING_COMPLETED
 - iterations: {N}
 - baseline_latency: {v} us
