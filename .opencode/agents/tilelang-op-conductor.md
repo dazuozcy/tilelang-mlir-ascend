@@ -29,7 +29,7 @@ mode: primary
 | 1 算子设计 | `DESIGN` | `@tilelang-op-designer` | `DESIGN.md` | `DESIGN_COMPLETED` |
 | 2 设计检视 | `REVIEW` | `@tilelang-design-reviewer` | `REVIEW.md` | `REVIEW_COMPLETED` |
 | 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `{op}.py` | `DEVELOP_COMPLETED` |
-| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_tuning/kernel_opt.py` | `TUNING_COMPLETED` |
+| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_opt/{op}.py` | `TUNING_COMPLETED` |
 
 ### 正常端到端流程
 
@@ -43,7 +43,7 @@ graph TD
     E -- 不通过 --> G[编排层生成修订指令]
     G --> B
     F --> H[阶段4: 算子调优 Agent]
-    H --> I[交付 kernel_opt.py]
+    H --> I[交付 {op}.py]
     I --> J[任务完成]
 ```
 
@@ -90,7 +90,7 @@ sequenceDiagram
 | `design_md_path` | string | `DESIGN.md` 文件路径 |
 | `review_md_path` | string | `REVIEW.md` 文件路径 |
 | `kernel_py_path` | string | `{op}.py` 文件路径 |
-| `kernel_opt_py_path` | string | `kernel_opt.py` 文件路径 |
+| `kernel_opt_py_path` | string | `{op}.py` 文件路径 |
 | `retry_count` | int | 设计修订重试次数（检视不通过或 `[DESIGN_ERROR]` 触发） |
 | `max_retry` | int | 最大允许设计修订次数（默认 3） |
 | `final_artifact` | string | 最终交付物路径 |
@@ -176,7 +176,7 @@ sequenceDiagram
 
 - **触发条件**：开发完成且用户确认需要性能调优
 - **输入**：`kernel_py_path`、`design_md_path`、`project_name`、`op_name`
-- **输出/交付件**：`perf_tuning/kernel_opt.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
+- **输出/交付件**：`perf_opt/{op}.py`（含 `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 块）
 - **完成信号**：`TUNING_COMPLETED`，触发任务完结（`phase=DONE`）
 
 ---
@@ -281,8 +281,8 @@ examples/{project}/{op}/
 ├── REVIEW.md                     # Stage 2 产物
 ├── {op}.py                       # Stage 3 产物（kernel + 内嵌 golden + main 块）
 ├── README.md                     # Stage 3 产物（可选）
-├── perf_tuning/                  # Stage 4 产物目录
-│   ├── kernel_opt.py             #   最优版本（kernel + 内嵌 golden + main 块）
+├── perf_opt/                  # Stage 4 产物目录
+│   ├── {op}.py             #   最优版本（kernel + 内嵌 golden + main 块）
 │   └── tuning_log.md             #   调优日志
 ├── history_version/              # 设计修订备份（design_v{N}.md）+ Stage 3 精度调试备份
 └── .stage_state.json             # conductor 专属状态文件
@@ -296,8 +296,8 @@ examples/{project}/{op}/
 | `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议 |
 | `{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
-| `perf_tuning/kernel_opt.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
-| `perf_tuning/tuning_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
+| `perf_opt/{op}.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
+| `perf_opt/tuning_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
 | `history_version/` | Stage 1/3 | conductor | 设计修订前 design 备份、精度调试前 impl 备份 |
 | `.stage_state.json` | conductor | conductor | 全局状态 |
 
@@ -492,7 +492,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ### Stage 4 中止条件
 
-满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `perf_tuning/kernel_opt.py`（或最优版本）。
+满足任一即结束：① 迭代次数达到用户指定上限（默认 10）；② 连续三次无性能提升；③ 达到用户指定的性能目标（type=latency/throughput/baseline_compare 时）。中止后 `phase=DONE`，`final_artifact` 指向 `perf_opt/{op}.py`（或最优版本）。
 
 ---
 
@@ -512,7 +512,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
   "design_md_path": "examples/{project}/{op}/DESIGN.md",
   "review_md_path": "examples/{project}/{op}/REVIEW.md",
   "kernel_py_path": "examples/{project}/{op}/{op}.py",
-  "kernel_opt_py_path": "examples/{project}/{op}/perf_tuning/kernel_opt.py",
+  "kernel_opt_py_path": "examples/{project}/{op}/perf_opt/{op}.py",
   "retry_count": 0,
   "max_retry": 3,
   "final_artifact": null,
@@ -590,7 +590,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 - design: examples/{project}/{op}/DESIGN.md
 - review: examples/{project}/{op}/REVIEW.md
 - kernel: examples/{project}/{op}/{op}.py（含 kernel + golden + 分层测试套件 L0/L1/L2/Boundary）
-- final_artifact: {final_artifact 路径，若有调优则指向 kernel_opt.py}
+- final_artifact: {final_artifact 路径，若有调优则指向 perf_opt/{op}.py}
 
 ## 精度结果
 - status: PASS / FAIL / UNKNOWN    accuracy_fix_count: {stage3 precision_fix 次数}
