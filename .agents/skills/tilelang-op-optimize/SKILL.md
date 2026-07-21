@@ -13,13 +13,11 @@ description: "对精度通过的算子实现进行性能调优，产出 {op}.py 
 
 ---
 
-## 2. 输入
+## 2. 参考资料
 
-| 字段 | 说明 |
-|------|------|
-| `kernel_py_path` | Stage 3 精度通过的 `{op}.py` |
-| `design_md_path` | 含性能目标章节的 `DESIGN.md` |
-| 性能目标 | 类型（latency/throughput/baseline_compare/best_effort）、目标数值、测试 shape、噪声阈值、最大迭代数 |
+- cube kernel 优化参考：[tilelang-cube-skill](../tilelang-cube-skill/)
+- vector kernel 优化参考：[tilelang-vector-skill](../tilelang-vector-skill/)
+- mix kernel 优化参考：[tilelang-mixcv-skill](../tilelang-mixcv-skill/)
 
 ---
 
@@ -27,8 +25,12 @@ description: "对精度通过的算子实现进行性能调优，产出 {op}.py 
 
 ### Phase 1：基线分析
 1. Read `{op}.py` 与 `DESIGN.md` 性能目标章节。
-2. 识别性能瓶颈（基于设计：访存瓶颈、计算密度、流水线深度、block 大小）。
-3. 测量基线性能（NPU 上真实 profiling）。
+2. 识别性能瓶颈(基于设计：访存瓶颈、计算密度、流水线深度、block 大小)。
+3. 测量基线性能(NPU 上真实 profiling).
+> 注意，只能使用 msprof op 命令采集 kernel 本身的耗时, 命令参考下面所示：
+```shell
+msprof op --kernel-name=kernel_name --output=output --launch-count=10 --warm-up=5 python script.py
+```
 
 ### Phase 2：优化迭代（每轮）
 
@@ -52,9 +54,9 @@ description: "对精度通过的算子实现进行性能调优，产出 {op}.py 
 ### Phase 3：中止条件判定
 
 满足任一即结束：
-1. 迭代次数达到用户指定上限（默认 10）。
-2. 连续三次无性能提升。
-3. 达到用户指定的性能目标（latency ≤ 目标 / throughput ≥ 目标 / 优于 baseline）。
+1. 迭代次数达到用户指定上限(默认 10).
+2. 连续三次无性能提升.
+3. 达到用户指定的性能目标(latency ≤ 目标 或 throughput ≥ 目标 或 优于 baseline).
 
 ### Phase 4：交付
 1. 选最优版本作为 `perf_opt/{op}.py`。
@@ -68,9 +70,9 @@ description: "对精度通过的算子实现进行性能调优，产出 {op}.py 
 ```text
 examples/{project}/{op}/perf_opt/
 ├── {op}.py            # 最终最优版本
-├── {op}_opt_v1.py         # 各迭代版本
+├── {op}_opt_v1.py     # 各迭代版本
 ├── {op}_opt_v2.py
-├── opt_log.md            # 调优日志
+├── opt_log.md         # 调优日志
 └── baseline.py -> ../{op}.py  # 基线（软链或拷贝）
 ```
 
