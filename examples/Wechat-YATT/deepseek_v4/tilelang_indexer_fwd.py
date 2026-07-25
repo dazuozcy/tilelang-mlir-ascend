@@ -5,6 +5,7 @@ import pytest
 import torch
 import tilelang
 import tilelang.language as T
+from tilelang.utils import NPUUtils
 
 os.environ["TILELANG_ASCEND_MODE"] = "Developer"
 
@@ -22,7 +23,7 @@ def tl_indexer_fwd_impl(
     block_Q=16,
 ):
     """TileLang Kernel for indexer forward computation."""
-    kernel_num = 24
+    kernel_num = NPUUtils.get().get_aicore_num()
     dtype = FP16
     accum_dtype = FP32
     index_dtype = INT32
