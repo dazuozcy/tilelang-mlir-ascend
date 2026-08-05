@@ -27,6 +27,38 @@ from tilelang.profiler import Profiler, TensorSupplyType
 from tilelang.transform.pass_config import normalize_pass_configs
 
 
+_ARCH_CACHE = None
+
+
+def _is_a5_device():
+    global _ARCH_CACHE
+    if _ARCH_CACHE is None:
+        _ARCH_CACHE = NPUUtils().get_arch()
+    return "910_95" in _ARCH_CACHE or "950" in _ARCH_CACHE
+
+
+def _normalize_out_idx(out_idx, total_params):
+    if out_idx is None:
+        return None
+    if isinstance(out_idx, int):
+        out_idx = [out_idx]
+    elif isinstance(out_idx, (list, tuple)):
+        out_idx = list(out_idx)
+    else:
+        raise TypeError(
+            f"out_idx must be int, list, or tuple; got {type(out_idx).__name__}"
+        )
+    normalized = []
+    for i in out_idx:
+        idx = i if i >= 0 else total_params + i
+        if idx < 0 or idx >= total_params:
+            raise ValueError(
+                f"out_idx {i} is out of bounds for kernel with {total_params} parameters"
+            )
+        normalized.append(idx)
+    return normalized
+
+
 class LaunchThreadExtractor:
     def __init__(self) -> None:
         self.expressions = []
@@ -439,7 +471,17 @@ def extract_device_print_code_from_cann():
 
 
 def generate_npu_wrapper_src(
-    constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, need_debug
+    constants,
+    signature,
+    workspace_size,
+    mix_mode,
+    lock_num,
+    lock_ini_val,
+    need_debug,
+    force_simt_only=False,
+    shared_mem_dynamic_size=0,
+    compile_on_910_95=False,
+    target_support_ffts=True,
 ):
     def _ty_to_cpp(ty):
         if ty[0] == "*":
@@ -709,7 +751,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   std::string name = "";
   name.append(kernelName);
   void *workspace_addr = NULL;
-  {"auto launch_call = [&]()" if enable_taskqueue else ""} {{
+  {
+        "auto launch_call = [=]() mutable -> rtError_t"
+        if (enable_taskqueue and compile_on_910_95)
+        else ("auto launch_call = [&]()" if enable_taskqueue else "")
+    } {{
     uint32_t blockNum = gridX * gridY * gridZ;
     {
         "blockNum = std::min(blockNum, (uint32_t)" + str(num_physical_blocks) + ");"
@@ -722,13 +768,18 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
         else ""
     }
     rtError_t ret;
+    void *syncBlockLock = NULL;
+    {
+        f'''
     void *ffts_addr = NULL;
     uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);
     if (ret != RT_ERROR_NONE) {{
-      return {"ret" if enable_taskqueue else ""};
+      return {'ret' if enable_taskqueue else ''};
     }}
-    // stub argument for workspace
-    void *syncBlockLock = NULL;
+    '''
+        if target_support_ffts
+        else ""
+    }
 
     uint16_t ModuleId = 0;
     {
@@ -762,9 +813,17 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
         else ""
     }
     struct __attribute__((packed)) {{
-      void* ffts_addr __attribute__((aligned(8)));
-      void* syncBlockLock __attribute__((aligned(8)));
-      void* workspace_addr __attribute__((aligned(8)));
+      {"void* ffts_addr __attribute__((aligned(8)));" if target_support_ffts else ""}
+      {
+        "void* syncBlockLock __attribute__((aligned(8)));"
+        if not force_simt_only
+        else ""
+    }
+      {
+        "void* workspace_addr __attribute__((aligned(8)));"
+        if not force_simt_only
+        else ""
+    }
       {
         " ".join(
             f"{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != '*' and ty[-2:] != '64' else 8})));"
@@ -780,9 +839,17 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     }
       {"void* DTData __attribute__((aligned(8)));" if need_debug else ""}
     }} args = {{
-      static_cast<void*>(ffts_addr),
-      static_cast<void*>(syncBlockLock),
-      static_cast<void*>(workspace_addr),
+      {"static_cast<void*>(ffts_addr)," if target_support_ffts else ""}
+      {
+        ("static_cast<void*>(syncBlockLock)," if lock_num > 0 else "nullptr,")
+        if not force_simt_only
+        else ""
+    }
+      {
+        ("static_cast<void*>(workspace_addr)," if workspace_size > 0 else "nullptr,")
+        if not force_simt_only
+        else ""
+    }
       {
         ", ".join(
             f"static_cast<{_ty_to_cpp(ty)}>(arg{i})"
@@ -799,17 +866,35 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       {", static_cast<void*>(DTData)" if need_debug else ""}
     }};
     {cpp_msprof_call_before_launch}
-    ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
+    {
+        f'''
+    rtArgsEx_t argsInfo = {{}};
+    argsInfo.args = static_cast<void*>(&args);
+    argsInfo.argsSize = sizeof(args);
+    rtTaskCfgInfo_t cfgInfo = {{}};
+    cfgInfo.localMemorySize = {shared_mem_dynamic_size};
+    ret = rtKernelLaunchWithFlagV2(func, blockNum, &argsInfo, NULL, stream, 0, &cfgInfo);
+    '''
+        if compile_on_910_95
+        else "ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);"
+    }
     {"void *&stream_ref = const_cast<void*&>(stream);" if need_debug else ""}
     {"cce::internal::DebugTunnel::Close(DTData, stream_ref);" if need_debug else ""}
     {cpp_msprof_call_after_launch}
-    {"return ret;" if enable_taskqueue else ""}
+    {
+        "return ret;"
+        if enable_taskqueue
+        else ("ret = rtStreamSynchronize(stream);" if compile_on_910_95 else "")
+    }
    }};
    {
-        "at_npu::native::OpCommand::RunOpApi(name.c_str(), launch_call, true);"
-        "rtFree(workspace_addr); "
-        if enable_taskqueue
-        else ""
+        "at_npu::native::OpCommand cmd; cmd.Name(name.c_str()).SetCustomHandler(launch_call).Run();"
+        if (enable_taskqueue and compile_on_910_95)
+        else (
+            "at_npu::native::OpCommand::RunOpApi(name.c_str(), launch_call, true); rtFree(workspace_addr);"
+            if enable_taskqueue
+            else ""
+        )
     }
   return;
 }}
@@ -999,7 +1084,6 @@ class JitKernel_NPU:
     def __init__(self, metadata: dict, out_idx=None) -> None:
         self.params = metadata["params"]
         self.signature = metadata.get("signature", {})
-        self.out_idx = out_idx
         self.param_info = metadata.get("param_info", [])
         # 1 launch path
         self.so_launcher_path = metadata.get(
@@ -1030,7 +1114,9 @@ class JitKernel_NPU:
         self.gridfunc = metadata["gridfunc"]
         self.symbolic = metadata["symbolic"]
         self.prim_func = metadata["primfunc"]
-        self.out_idx = metadata["out_idx"]
+        self.out_idx = _normalize_out_idx(
+            out_idx if out_idx is not None else metadata["out_idx"], len(self.params)
+        )
         self._launch()
         (
             self.npu_module,
@@ -1055,10 +1141,7 @@ class JitKernel_NPU:
         metadata: str,
         out_idx: Union[List[int], int],
     ):
-        if isinstance(out_idx, int):
-            out_idx = [out_idx]
         metadata["so_launcher_path"] = kernel_launcher_path
-        metadata["out_idx"] = out_idx
         instance = cls(metadata)
         instance.so_launcher_path = kernel_launcher_path
         instance.so_utils_path = kernel_utils_path
@@ -1356,10 +1439,8 @@ class compiler_npu:
         self.original_mod = mod
         # extract_param_info
         param_info = self._extract_param_info(mod, out_idx)
-        # process negative out_idx
-        if out_idx is not None:
-            total_params = len(param_info)
-            out_idx = [i if i >= 0 else total_params + i for i in out_idx]
+        # Normalise out_idx to canonical (non-negative, list) form
+        out_idx = _normalize_out_idx(out_idx, len(param_info))
         self.metadata = {}
         self.metadata["out_idx"] = out_idx
         self.metadata["param_info"] = param_info
@@ -1395,6 +1476,10 @@ class compiler_npu:
         self._parse_npuir_metadata()
         self.metadata["kernel_src"] = self._npuir_to_bin_enable_npu_compile()
         self.header_path = get_npu_launcher_header()
+        is_a5 = _is_a5_device()
+        shared_mem_dynamic_size = self.metadata.get(
+            "shared_mem_dynamic_size", 221184 if is_a5 else 0
+        )
         self.wrapper_src = generate_npu_wrapper_src(
             self.constants,
             self.signature,
@@ -1403,6 +1488,10 @@ class compiler_npu:
             self.lock_num,
             self.lock_ini_val,
             self.need_debug,
+            self.metadata.get("force_simt_only", False),
+            shared_mem_dynamic_size,
+            is_a5,
+            not is_a5,
         )
         self.so_launcher_path = self.make_npu_launcher_stub(
             self.metadata["kernel_name"], self.header_path, self.wrapper_src
@@ -1612,8 +1701,12 @@ class compiler_npu:
         result = {}
         index = 0
 
-        # Skip parameters insert by compiler
-        for param in params[3:-6]:
+        # Skip parameters inserted by compiler:
+        # A5 (910_95/950): 2 params (syncBlockLock, workspace) - ffts_addr not supported
+        # Others: 3 params (ffts_addr, syncBlockLock, workspace)
+        is_a5 = _is_a5_device()
+        compiler_inserted_params = 2 if is_a5 else 3
+        for param in params[compiler_inserted_params:-6]:
             # Check if the type includes the target type
             found_type = None
             for t_type in target_types:
@@ -1657,33 +1750,41 @@ class compiler_npu:
             # TileLang Ascend JIT Runtime now follows Triton JIT style.
             # bishengir-compile --enable-triton-kernel-compile=true make sure the way.
 
-            # Build compile options with pass_configs support
             _compile_option_list = []
-
-            # Get configuration from pass_configs with default values
             pass_configs = getattr(self, "pass_configs", {})
 
-            # Handle --enable-auto-multi-buffer option
-            enable_auto_multi_buffer = pass_configs.get(
-                "npuir.enable_auto_multi_buffer",
-                True,  # Default: enabled
-            )
-            _compile_option_list.append(
-                f"--enable-auto-multi-buffer={str(enable_auto_multi_buffer).lower()}"
-            )
-
-            # Handle --disable-hivm-auto-inject-sync option
-            disable_hivm_auto_inject_sync = pass_configs.get(
-                "npuir.disable_hivm_auto_inject_sync",
-                False,  # Default: enabled
-            )
-            _compile_option_list.append(
-                f"--disable-hivm-auto-inject-sync={str(disable_hivm_auto_inject_sync).lower()}"
-            )
-
-            _compile_option_list.append("--enable-triton-kernel-compile=true")
-
-            _compile_option_list.append("--enable-hivm-compile=true")
+            if _is_a5_device():
+                # === A5 compile options ===
+                env_arch = os.getenv("TRITON_ASCEND_ARCH", "")
+                target_arch = env_arch if env_arch else _ARCH_CACHE
+                _compile_option_list = [
+                    f"--target={target_arch}",
+                    "--enable-auto-multi-buffer=true",
+                    "--disable-ffts",
+                    "--enable-triton-kernel-compile=true",
+                    "--enable-hivm-compile=true",
+                    "--enable-vf-merge-level=1",
+                    "--enable-hfusion-compile=true",
+                    "--enable-auto-bind-sub-block=true",
+                ]
+            else:
+                # === Non-A5 compile options ===
+                enable_auto_multi_buffer = pass_configs.get(
+                    "npuir.enable_auto_multi_buffer",
+                    True,
+                )
+                _compile_option_list.append(
+                    f"--enable-auto-multi-buffer={str(enable_auto_multi_buffer).lower()}"
+                )
+                disable_hivm_auto_inject_sync = pass_configs.get(
+                    "npuir.disable_hivm_auto_inject_sync",
+                    False,
+                )
+                _compile_option_list.append(
+                    f"--disable-hivm-auto-inject-sync={str(disable_hivm_auto_inject_sync).lower()}"
+                )
+                _compile_option_list.append("--enable-triton-kernel-compile=true")
+                _compile_option_list.append("--enable-hivm-compile=true")
 
             TILELANG_ASCEND_MODE = os.environ.get("TILELANG_ASCEND_MODE")
             if TILELANG_ASCEND_MODE is None or TILELANG_ASCEND_MODE.lower().strip() in [
