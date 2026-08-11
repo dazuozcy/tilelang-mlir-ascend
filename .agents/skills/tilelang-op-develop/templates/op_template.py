@@ -25,7 +25,10 @@ def add_kernel(M, N, block_M, block_N, in_dtype="float32", out_dtype="float32"):
         B: T.Tensor((M, N), in_dtype),
         C: T.Tensor((M, N), out_dtype),
     ):
-        with T.Kernel(T.ceildiv(N, block_N) * T.ceildiv(M, block_M), is_npu=True) as (cid, _):
+        with T.Kernel(T.ceildiv(N, block_N) * T.ceildiv(M, block_M), is_npu=True) as (
+            cid,
+            _,
+        ):
             by = cid // T.ceildiv(N, block_N)
             bx = cid % T.ceildiv(N, block_N)
             A_shared = T.alloc_shared((block_M, block_N), in_dtype)
@@ -35,9 +38,12 @@ def add_kernel(M, N, block_M, block_N, in_dtype="float32", out_dtype="float32"):
             T.copy(A[by * block_M, bx * block_N], A_shared)
             T.copy(B[by * block_M, bx * block_N], B_shared)
             for local_y, local_x in T.Parallel(block_M, block_N):
-                C_local[local_y, local_x] = A_shared[local_y, local_x] + B_shared[local_y, local_x]
+                C_local[local_y, local_x] = (
+                    A_shared[local_y, local_x] + B_shared[local_y, local_x]
+                )
             T.copy(C_local, C_shared)
             T.copy(C_shared, C[by * block_M, bx * block_N])
+
     return _main
 
 
@@ -46,7 +52,10 @@ def _run_case(M, N, dtype, tag):
     a = torch.randn(M, N, dtype=dtype, device="npu")
     b = torch.randn(M, N, dtype=dtype, device="npu")
     kernel = add_kernel(
-        M, N, block_M=32, block_N=32,
+        M,
+        N,
+        block_M=32,
+        block_N=32,
         in_dtype=str(dtype).replace("torch.", ""),
         out_dtype=str(dtype).replace("torch.", ""),
     )
