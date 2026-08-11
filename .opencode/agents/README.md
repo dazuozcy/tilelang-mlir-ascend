@@ -1,3 +1,4 @@
+
 # TileLang-NPUIR 算子自动生成系统
 
 基于 OpenCode Agent 编排的 TileLang-NPUIR 算子端到端自动开发系统。通过 **Stage-Gate（阶段门禁）** 模式调度四个专职子 Agent，将算子从一句自然语言需求自动推进到经精度与性能验证的可交付 kernel。
@@ -24,31 +25,30 @@
 
 ### 何时使用本系统
 
-| 场景 | 说明 |
-|------|------|
-| 新算子开发 | 从数学公式/参考 API 出发，自动设计 → 检视 → 实现 → 调优 |
-| 算子迁移 | 已有 TileLang（GPU/CPU）实现，迁移到 `target="npuir"`，函数名与签名保持不变 |
-| 中断后续跑 | 任务因环境/超时中断，从 `.stage_state.json` 记录的阶段续跑 |
-| 失败恢复 | 精度/编译失败后，在原阶段内按失败子类型路由重试 |
-| 设计修订 | 检视不通过或实施期发现设计层错误，自动回退 Stage 1 重做设计 |
+| 场景       | 说明                                                                         |
+| ---------- | ---------------------------------------------------------------------------- |
+| 新算子开发 | 从数学公式/参考 API 出发，自动设计 → 检视 → 实现 → 调优                   |
+| 算子迁移   | 已有 TileLang（GPU/CPU）实现，迁移到`target="npuir"`，函数名与签名保持不变 |
+| 中断后续跑 | 任务因环境/超时中断，从`.stage_state.json` 记录的阶段续跑                  |
+| 失败恢复   | 精度/编译失败后，在原阶段内按失败子类型路由重试                              |
+| 设计修订   | 检视不通过或实施期发现设计层错误，自动回退 Stage 1 重做设计                  |
 
 ### 覆盖的算子类型
 
-| 类型 | 典型算子 | 涉及 Skill |
-|------|----------|-----------|
-| 纯 Vector | element-wise、激活、归约、softmax 子流程、rmsnorm | `tilelang-vector-skill` |
-| 纯 Cube | matmul、batch gemm、int8 量化 gemm | `tilelang-cube-skill` |
-| 混合 Cube+Vector（MixCV） | flash attention、online softmax + GEMM 融合 | `tilelang-mixcv-skill` |
+| 类型                      | 典型算子                                          | 涉及 Skill                |
+| ------------------------- | ------------------------------------------------- | ------------------------- |
+| 纯 Vector                 | element-wise、激活、归约、softmax 子流程、rmsnorm | `tilelang-vector-skill` |
+| 纯 Cube                   | matmul、batch gemm、int8 量化 gemm                | `tilelang-cube-skill`   |
+| 混合 Cube+Vector（MixCV） | flash attention、online softmax + GEMM 融合       | `tilelang-mixcv-skill`  |
 
 ### 编程模式
 
 系统支持三种编程模式，由用户在需求预检阶段显式选择（不可默认填）：
 
-| 模式 | 特点 | 适用 |
-|------|------|------|
-| **Developer** | 编译器托管行为，API 简洁，自动同步 | 快速开发、常规算子 |
-| **Expert** | 手动控制 L1/UB/L0C、NZ 格式、set_flag/wait_flag | 极致性能、Cube NZ 路径 |
-
+| 模式                | 特点                                            | 适用                   |
+| ------------------- | ----------------------------------------------- | ---------------------- |
+| **Developer** | 编译器托管行为，API 简洁，自动同步              | 快速开发、常规算子     |
+| **Expert**    | 手动控制 L1/UB/L0C、NZ 格式、set_flag/wait_flag | 极致性能、Cube NZ 路径 |
 
 模式切换：`os.environ["TILELANG_ASCEND_MODE"] = "Developer"` / `"Expert"`
 
@@ -93,12 +93,12 @@
 
 ### 四阶段总览
 
-| Stage | phase | 子 Agent | 交付件 | 完成信号 |
-|-------|-------|---------|--------|---------|
-| 1 算子设计 | `DESIGN` | `@tilelang-op-designer` | `DESIGN.md` | `DESIGN_COMPLETED` |
-| 2 设计检视 | `REVIEW` | `@tilelang-design-reviewer` | `REVIEW.md` | `REVIEW_COMPLETED` |
-| 3 算子开发 | `DEVELOP` | `@tilelang-op-developer` | `{op}.py` | `DEVELOP_COMPLETED` |
-| 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_opt/{op}.py` | `TUNING_COMPLETED` |
+| Stage      | phase       | 子 Agent                      | 交付件               | 完成信号              |
+| ---------- | ----------- | ----------------------------- | -------------------- | --------------------- |
+| 1 算子设计 | `DESIGN`  | `@tilelang-op-designer`     | `DESIGN.md`        | `DESIGN_COMPLETED`  |
+| 2 设计检视 | `REVIEW`  | `@tilelang-design-reviewer` | `REVIEW.md`        | `REVIEW_COMPLETED`  |
+| 3 算子开发 | `DEVELOP` | `@tilelang-op-developer`    | `{op}.py`          | `DEVELOP_COMPLETED` |
+| 4 算子调优 | `TUNING`  | `@tilelang-op-optimizer`    | `perf_opt/{op}.py` | `TUNING_COMPLETED`  |
 
 ### 流程图
 
@@ -149,14 +149,12 @@ graph TD
 - **执行**：调用 `tilelang-op-develop` skill → 生成 `@tilelang.jit(target="npuir")` kernel + 内嵌 PyTorch golden + 分层测试套件（L0/L1/L2/Boundary）→ 在 NPU 上真实跑测。
 - **分层测试**：每次 attempt 先跑 L0 收敛精度 → L0 通过后扩展 L1/L2/Boundary 跑全量 `--level all`。L0/L1 失败才算精度未达标；L2/Boundary 告警仅记录不阻塞。
 - **三态判定**：
-
-  | 条件 | 返回标记 | 路由 |
-  |------|----------|------|
-  | L0 + L1 全过（L2/Boundary 告警不阻塞） | `[PRECISION_PASS]` | → 二次校验 → 询问调优 |
-  | L0 或 L1 未过 | `[PRECISION_FAIL]` | → `precision_fix` 重试 |
-  | 设计层错误（API 不可用/L0C 溢出/内存层级冲突/同步冲突/动态边界） | `[DESIGN_ERROR]` | → 设计修订循环（路径 B） |
-  | 无标记且 exit code ≠ 0 | `RUNTIME_FAIL` | → `retry_impl` 重试 |
-
+  | 条件                                                             | 返回标记             | 路由                      |
+  | ---------------------------------------------------------------- | -------------------- | ------------------------- |
+  | L0 + L1 全过（L2/Boundary 告警不阻塞）                           | `[PRECISION_PASS]` | → 二次校验 → 询问调优   |
+  | L0 或 L1 未过                                                    | `[PRECISION_FAIL]` | →`precision_fix` 重试  |
+  | 设计层错误（API 不可用/L0C 溢出/内存层级冲突/同步冲突/动态边界） | `[DESIGN_ERROR]`   | → 设计修订循环（路径 B） |
+  | 无标记且 exit code ≠ 0                                          | `RUNTIME_FAIL`     | →`retry_impl` 重试     |
 - **重试上限**：5 次 attempt（运行失败 + 精度失败合并累计；`[DESIGN_ERROR]` 不计入）。
 
 #### Stage 4 — 算子调优（`tilelang-op-optimizer`）
@@ -172,10 +170,10 @@ graph TD
 
 两条触发路径，**共用同一个 `retry_count` 预算**（上限 `max_retry`，默认 3）：
 
-| 路径 | 触发源 | 识别信号 |
-|------|--------|----------|
-| A. 检视不通过 | Stage 2 `REVIEW.md` | `结论: 不通过` + 修改建议 |
-| B. 实施期设计错误 | Stage 3 Subagent | 输出含 `[DESIGN_ERROR]` 标记 + 原因 |
+| 路径              | 触发源               | 识别信号                             |
+| ----------------- | -------------------- | ------------------------------------ |
+| A. 检视不通过     | Stage 2`REVIEW.md` | `结论: 不通过` + 修改建议          |
+| B. 实施期设计错误 | Stage 3 Subagent     | 输出含`[DESIGN_ERROR]` 标记 + 原因 |
 
 处理流程：备份旧 `DESIGN.md` → `history_version/design_v{N}.md` → `retry_count += 1` → 若未超限则重做 Stage 1（`mode=revision`，传入 `design_error_summary` + `previous_revisions` 避免重蹈覆辙）→ 超 `max_retry` 则 `phase=FAILED`、`failure_reason=BLOCKED_DESIGN`。
 
@@ -223,13 +221,13 @@ conductor 会读取 `examples/norm/layer_norm/.stage_state.json`，从记录的 
 
 conductor 在 Stage 1 启动前会在 Primary 上下文逐字段确认（缺失则通过 `AskUserQuestion` 追问，**编程模式不可默认填**）：
 
-| 字段 | 判定齐全标准 |
-|------|-------------|
-| 算子名称 | 用户消息含明确算子名（如 `softmax`） |
+| 字段                | 判定齐全标准                                    |
+| ------------------- | ----------------------------------------------- |
+| 算子名称            | 用户消息含明确算子名（如`softmax`）           |
 | 数学公式 / 计算语义 | 公式或标准 API 名（如"参考 PyTorch F.softmax"） |
-| 输入张量规格 | shape + dtype 都明确（shape 可含动态维度符号） |
-| 输出张量规格 | shape + dtype 都明确（可答"同输入"） |
-| 编程模式偏好 | `Developer` / `Expert` / `混合` 三者之一 |
+| 输入张量规格        | shape + dtype 都明确（shape 可含动态维度符号）  |
+| 输出张量规格        | shape + dtype 都明确（可答"同输入"）            |
+| 编程模式偏好        | `Developer` / `Expert` / `混合` 三者之一  |
 
 迁移类任务额外要求：提供原算子文件路径 + 输出 shape。
 
@@ -313,24 +311,24 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 
 ### `.stage_state.json` 关键字段
 
-| 字段 | 说明 |
-|------|------|
-| `phase` | `DESIGN / REVIEW / DEVELOP / TUNING / DONE / FAILED` |
-| `project_name` / `operator_name` | 决定全流程目录路径 |
-| `retry_count` / `max_retry` | 设计修订预算（路径 A+B 合并累计，默认上限 3） |
-| `stage_retry_count` | 各阶段子 Agent 异常重试计数（独立于 `retry_count`） |
-| `stage3_failure_breakdown` | `runtime_fail` / `precision_fail` 细分 |
-| `failure_reason` | `BLOCKED_DESIGN / BLOCKED_IMPL / BLOCKED_ACCURACY / BLOCKED_ENVIRONMENT / BLOCKED_SPEC` |
+| 字段                                 | 说明                                                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `phase`                            | `DESIGN / REVIEW / DEVELOP / TUNING / DONE / FAILED`                                    |
+| `project_name` / `operator_name` | 决定全流程目录路径                                                                        |
+| `retry_count` / `max_retry`      | 设计修订预算（路径 A+B 合并累计，默认上限 3）                                             |
+| `stage_retry_count`                | 各阶段子 Agent 异常重试计数（独立于`retry_count`）                                      |
+| `stage3_failure_breakdown`         | `runtime_fail` / `precision_fail` 细分                                                |
+| `failure_reason`                   | `BLOCKED_DESIGN / BLOCKED_IMPL / BLOCKED_ACCURACY / BLOCKED_ENVIRONMENT / BLOCKED_SPEC` |
 
 ### 重试与中止规则
 
-| Stage | 上限 | 超限后状态 |
-|-------|------|------------|
-| 1 | 3 次门禁失败 | `BLOCKED_DESIGN` |
-| 2 | 检视不通过走 `retry_count` 修订循环 | `retry_count >= max_retry` → `BLOCKED_DESIGN` |
-| 3 | 5 次 Subagent 调度（运行+精度合并；DESIGN_ERROR 不计） | 运行失败 → `BLOCKED_IMPL`；精度失败 → `BLOCKED_ACCURACY` |
-| 4 | 10 轮迭代 | `SUCCESS`（附中止原因） |
-| 设计修订 | `max_retry`（默认 3） | `BLOCKED_DESIGN` |
+| Stage    | 上限                                                   | 超限后状态                                                    |
+| -------- | ------------------------------------------------------ | ------------------------------------------------------------- |
+| 1        | 3 次门禁失败                                           | `BLOCKED_DESIGN`                                            |
+| 2        | 检视不通过走`retry_count` 修订循环                   | `retry_count >= max_retry` → `BLOCKED_DESIGN`            |
+| 3        | 5 次 Subagent 调度（运行+精度合并；DESIGN_ERROR 不计） | 运行失败 →`BLOCKED_IMPL`；精度失败 → `BLOCKED_ACCURACY` |
+| 4        | 10 轮迭代                                              | `SUCCESS`（附中止原因）                                     |
+| 设计修订 | `max_retry`（默认 3）                                | `BLOCKED_DESIGN`                                            |
 
 ---
 
@@ -338,13 +336,13 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 
 本目录下的 Agent 定义文件：
 
-| 文件 | Agent | 角色 | mode |
-|------|-------|------|------|
-| `tilelang-op-conductor.md` | `tilelang-op-conductor` | 唯一流程 owner，调度四阶段、维护状态、处理修订循环 | primary |
-| `tilelang-op-designer.md` | `tilelang-op-designer` | Stage 1 执行器，生成 `DESIGN.md` | subagent |
-| `tilelang-design-reviewer.md` | `tilelang-design-reviewer` | Stage 2 执行器，生成 `REVIEW.md` | subagent |
-| `tilelang-op-developer.md` | `tilelang-op-developer` | Stage 3 执行器，生成 `{op}.py` + 三态判定 | subagent |
-| `tilelang-op-optimizer.md` | `tilelang-op-optimizer` | Stage 4 执行器，生成 `perf_opt/{op}.py` | subagent |
+| 文件                            | Agent                        | 角色                                               | mode     |
+| ------------------------------- | ---------------------------- | -------------------------------------------------- | -------- |
+| `tilelang-op-conductor.md`    | `tilelang-op-conductor`    | 唯一流程 owner，调度四阶段、维护状态、处理修订循环 | primary  |
+| `tilelang-op-designer.md`     | `tilelang-op-designer`     | Stage 1 执行器，生成`DESIGN.md`                  | subagent |
+| `tilelang-design-reviewer.md` | `tilelang-design-reviewer` | Stage 2 执行器，生成`REVIEW.md`                  | subagent |
+| `tilelang-op-developer.md`    | `tilelang-op-developer`    | Stage 3 执行器，生成`{op}.py` + 三态判定         | subagent |
+| `tilelang-op-optimizer.md`    | `tilelang-op-optimizer`    | Stage 4 执行器，生成`perf_opt/{op}.py`           | subagent |
 
 ### Agent 间职责边界
 
@@ -364,31 +362,31 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 
 ### 算子开发流程类（Stage 直接调用）
 
-| Skill | 触发 | 产物 |
-|-------|------|------|
-| `tilelang-op-design` | 设计算子、生成 DESIGN.md | `DESIGN.md` |
-| `tilelang-design-review` | review 设计文档 | `REVIEW.md` |
-| `tilelang-op-develop` | 实现算子、跑精度 | `{op}.py` + 三态判定 |
-| `tilelang-op-optimize` | 性能调优 | `perf_opt/{op}.py` + `opt_log.md` |
+| Skill                      | 触发                     | 产物                                  |
+| -------------------------- | ------------------------ | ------------------------------------- |
+| `tilelang-op-design`     | 设计算子、生成 DESIGN.md | `DESIGN.md`                         |
+| `tilelang-design-review` | review 设计文档          | `REVIEW.md`                         |
+| `tilelang-op-develop`    | 实现算子、跑精度         | `{op}.py` + 三态判定                |
+| `tilelang-op-optimize`   | 性能调优                 | `perf_opt/{op}.py` + `opt_log.md` |
 
 ### 领域知识类（被上述流程或用户直接触发）
 
-| Skill | 用途 |
-|-------|------|
-| `tilelang-npuir-overview` | npuir 分支架构与编译链路、Developer/Expert 模式 |
-| `tilelang-vector-skill` | Vector 算子开发，v-prefix API（vadd/vmul/vexp/vcast/vbrc） |
-| `tilelang-cube-skill` | Cube 算子开发，load_nd2nz/store_fixpipe/NZ 格式/L1/L0C |
-| `tilelang-mixcv-skill` | 混合 Cube+Vector，flash attention、流水并行、sync_block_set/wait |
+| Skill                       | 用途                                                             |
+| --------------------------- | ---------------------------------------------------------------- |
+| `tilelang-npuir-overview` | npuir 分支架构与编译链路、Developer/Expert 模式                  |
+| `tilelang-vector-skill`   | Vector 算子开发，v-prefix API（vadd/vmul/vexp/vcast/vbrc）       |
+| `tilelang-cube-skill`     | Cube 算子开发，load_nd2nz/store_fixpipe/NZ 格式/L1/L0C           |
+| `tilelang-mixcv-skill`    | 混合 Cube+Vector，flash attention、流水并行、sync_block_set/wait |
 
 ### 辅助类
 
-| Skill | 用途 |
-|-------|------|
-| `tilelang-mlir-skill` | TileLangIR / MLIR pass 工作流与调试 |
-| `tilelang-debug-helper` | GDB 附加、IR dump、精度异常定位、最小复现缩减 |
-| `tilelang-error-fixer` | 编译/运行/pass/精度/性能错误诊断与修复 |
-| `tilelang-review-skill` | 风险优先代码审查、PR 前 lint/format 校验 |
-| `tilelang-github-operations` | commit/push/PR/rebase/issue 工作流 |
+| Skill                          | 用途                                          |
+| ------------------------------ | --------------------------------------------- |
+| `tilelang-mlir-skill`        | TileLangIR / MLIR pass 工作流与调试           |
+| `tilelang-debug-helper`      | GDB 附加、IR dump、精度异常定位、最小复现缩减 |
+| `tilelang-error-fixer`       | 编译/运行/pass/精度/性能错误诊断与修复        |
+| `tilelang-review-skill`      | 风险优先代码审查、PR 前 lint/format 校验      |
+| `tilelang-github-operations` | commit/push/PR/rebase/issue 工作流            |
 
 ---
 
@@ -396,18 +394,18 @@ INIT --> DESIGN --> REVIEW --> DEVELOP --> TUNING --> DONE
 
 ### 项目内文档
 
-| 文档 | 路径 | 内容 |
-|------|------|------|
-| 仓库 Agent 指南 | `AGENTS.md` | API 约定、Skill 索引、触发规则、Docs 路由、算子实现基线、PR 格式规则 |
-| 快速入门 | `docs/快速入门.md` | 工作流与上手 |
-| 开发指南 | `docs/开发指南.md` | 开发流程与规范 |
-| 调试指南 | `docs/Tilelang算子调试指南.md` | 调试与问题定位 |
-| 贡献指南 | `docs/Tilelang-Ascend贡献指南.md` | PR、issue、CI 流程 |
-| 环境变量 | `docs/developer/EnvironmentVariables.md` | 运行时与编译环境变量 |
-| NPU Runtime | `docs/developer/npu runtime.md` | target 切换、环境配置 |
-| 模式对比 | `docs/Developer_Expert_Mode对比.md` | Developer / Expert 差异 |
-| 安装指南 | `docs/安装指南.md` | 环境安装 |
-| 语言 API 文档 | `docs/Tilelang.language/` | 按 操作类型 分类的 API 语义文档 |
+| 文档            | 路径                                       | 内容                                                                 |
+| --------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| 仓库 Agent 指南 | `AGENTS.md`                              | API 约定、Skill 索引、触发规则、Docs 路由、算子实现基线、PR 格式规则 |
+| 快速入门        | `docs/快速入门.md`                       | 工作流与上手                                                         |
+| 开发指南        | `docs/开发指南.md`                       | 开发流程与规范                                                       |
+| 调试指南        | `docs/Tilelang算子调试指南.md`           | 调试与问题定位                                                       |
+| 贡献指南        | `docs/Tilelang-Ascend贡献指南.md`        | PR、issue、CI 流程                                                   |
+| 环境变量        | `docs/developer/EnvironmentVariables.md` | 运行时与编译环境变量                                                 |
+| NPU Runtime     | `docs/developer/npu runtime.md`          | target 切换、环境配置                                                |
+| 模式对比        | `docs/Developer_Expert_Mode对比.md`      | Developer / Expert 差异                                              |
+| 安装指南        | `docs/安装指南.md`                       | 环境安装                                                             |
+| 语言 API 文档   | `docs/Tilelang.language/`                | 按 操作类型 分类的 API 语义文档                                      |
 
 ### Docs 自动路由规则
 
@@ -419,14 +417,13 @@ Skill 回答技术问题时按以下优先级路由文档（详见 `AGENTS.md`�
 4. `docs/开发指南.md` / `docs/快速入门.md` — 工作流与上手
 5. `docs/Tilelang-Ascend贡献指南.md` — PR 与贡献
 
-
 ### Skill 内部参考文档
 
-| Skill | 参考文档 |
-|-------|---------|
-| `tilelang-op-design` | `references/ascend-constraints.md`（技术约束）、`references/decision-tree.md`（决策树）、`references/info-sources.md`（信息源）、`templates/design-template.md`（DESIGN.md 模板） |
-| `tilelang-op-develop` | `templates/op_template.py`（代码模板） |
-| `tilelang-op-optimize` | `tilelang-cube-skill` / `tilelang-vector-skill` / `tilelang-mixcv-skill`（优化参考） |
-| `tilelang-npuir-overview` | `references/arch.md`、`references/compile-pipeline.md`、`references/modes.md`、`references/env-setup.md` |
+| Skill                       | 参考文档                                                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tilelang-op-design`      | `references/ascend-constraints.md`（技术约束）、`references/decision-tree.md`（决策树）、`references/info-sources.md`（信息源）、`templates/design-template.md`（DESIGN.md 模板） |
+| `tilelang-op-develop`     | `templates/op_template.py`（代码模板）                                                                                                                                                  |
+| `tilelang-op-optimize`    | `tilelang-cube-skill` / `tilelang-vector-skill` / `tilelang-mixcv-skill`（优化参考）                                                                                                |
+| `tilelang-npuir-overview` | `references/arch.md`、`references/compile-pipeline.md`、`references/modes.md`、`references/env-setup.md`                                                                          |
 
 ---
