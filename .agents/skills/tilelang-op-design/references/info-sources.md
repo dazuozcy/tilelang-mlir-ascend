@@ -54,5 +54,4 @@ grep "T.Scope\|T.barrier" examples/{同类实现}  # 同步方式
 | 5 | `tilelang/language/__init__.py` + `tilelang/language/*.py` | 公开 API 导出关系与前端定义 | API 定义 |
 | 6 | `src/op/` + `src/target/` | lowering 与后端实现状态 | 实现验证 |
 
-
 **规则**：当信息源之间矛盾时，以 `examples/` 为准。若 `examples/` 未覆盖，以 `docs/` 为准。若 `docs/` 未覆盖，以 `tilelang/language/` 源码实际实现为准。

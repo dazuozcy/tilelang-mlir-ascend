@@ -3,7 +3,7 @@ name: tilelang-op-developer
 description: "TileLang-NPUIR 算子开发 Subagent。负责 Stage 3 算子开发，调用 tilelang-op-develop skill 生成 kernel + golden + 分层测试套件并执行，返回三态判定。"
 mode: subagent
 skills:
-  - tilelang-op-develop
+- tilelang-op-develop
 ---
 
 # TileLang-NPUIR 算子开发 Agent -- Stage 3 执行器

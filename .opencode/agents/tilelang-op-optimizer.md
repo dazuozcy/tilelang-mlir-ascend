@@ -3,7 +3,7 @@ name: tilelang-op-optimizer
 description: "TileLang-NPUIR 算子调优 Subagent。负责 Stage 4 性能调优，调用 tilelang-op-optimize skill 产出 {op}.py 与调优日志。"
 mode: subagent
 skills:
-  - tilelang-op-optimize
+- tilelang-op-optimize
 ---
 
 # TileLang-NPUIR 算子调优 Agent -- Stage 4 执行器

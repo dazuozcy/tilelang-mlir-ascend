@@ -122,8 +122,8 @@ sequenceDiagram
       ```bash
       mkdir -p examples/{project}/{op} && cat examples/{project}/{op}/.stage_state.json 2>/dev/null || echo "NEW"
       ```
-      - 输出 JSON → 用 Read 读完整文件，解析 `phase` 续跑。
-      - 输出 `NEW` → 按 `init` 动作（见「状态写入接口」）用 Write 创建初始状态文件。
+  - 输出 JSON → 用 Read 读完整文件，解析 `phase` 续跑。
+  - 输出 `NEW` → 按 `init` 动作（见「状态写入接口」）用 Write 创建初始状态文件。
 - [ ] 从 `phase` 对应 Stage 开始逐阶段推进，不跳过未通过门禁的阶段。
 
 ---

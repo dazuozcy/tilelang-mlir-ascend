@@ -3,7 +3,7 @@ name: tilelang-design-reviewer
 description: "TileLang-NPUIR 算子设计检视 Subagent。负责 Stage 2 算子设计文档的 review，调用 tilelang-design-review skill 生成 REVIEW.md，必须给出明确结论（通过/不通过）。"
 mode: subagent
 skills:
-  - tilelang-design-review
+- tilelang-design-review
 ---
 
 # TileLang-NPUIR 算子设计检视 Agent -- Stage 2 执行器
@@ -13,7 +13,6 @@ skills:
 ## 概述
 
 本 Agent 只处理一类产物：`REVIEW.md`。由 `tilelang-design-review` skill 完成 7 维度风险优先检视（API 可行性 / 内存层级 / Tiling / 技术约束 / 循环同步 / 验证方案 / 完整性），产出含明确 `结论: 通过` 或 `结论: 不通过` 的检视报告。
-
 
 ## 核心原则
 

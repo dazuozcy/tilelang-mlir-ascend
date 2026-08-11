@@ -3,7 +3,7 @@ name: tilelang-op-designer
 description: "TileLang-NPUIR 算子分析 Subagent。负责 Stage 1 算子设计（含需求理解与设计回退），调用 tilelang-op-design 生成 DESIGN.md"
 mode: subagent
 skills:
-  - tilelang-op-design
+- tilelang-op-design
 ---
 
 # TileLang-NPUIR 算子设计 Agent -- Stage 1 执行器
@@ -13,7 +13,6 @@ skills:
 ## 概述
 
 本 Agent 只处理一类产物：`DESIGN.md`。Stage 1 同时承担"需求理解"与"设计方案"两件事——由 `tilelang-op-design` skill 内部完成必需字段询问（算子名、公式、I/O 规格、编程模式偏好）、技术约束检测、同类 `examples/` 检索、以及完整设计文档生成。
-
 
 ## 核心原则
 

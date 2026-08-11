@@ -36,7 +36,6 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
 
 **迁移算子时必须提供原算子路径和输出形状**，否则无法证明迁移正确性。Golden 实现一致性要求详见 [tilelang-op-develop SKILL.md](../tilelang-op-develop/SKILL.md)。
 
-
 **提问规则（必须严格遵守）**：
 1. **优先使用调用方传入的字段**：若调用方（如 `@tilelang-op-conductor` 通过 designer 传入 `op_requirements` 结构）已经提供了字段值，**全部跳过提问**，直接进入技术约束检测和 DESIGN.md 生成
 2. **每次只询问一个字段**：使用 `question` 工具时，`questions` 数组中只包含一个元素
@@ -86,7 +85,7 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
      - 纯 Vector（element-wise / reduction）→ 仅需 UB
      - 纯 Cube（仅 matmul）→ 需要 L1 + L0A/L0B/L0C
      - 混合（matmul + element-wise 后处理）→ 核间流水线，需要 CV 融合
-      - **Host 预处理**：如 im2col 等 Python 侧预处理步骤，标明在 DESIGN.md 的 §1 和 §4 中
+     - **Host 预处理**：如 im2col 等 Python 侧预处理步骤，标明在 DESIGN.md 的 §1 和 §4 中
    - **复杂度级别**：
      - 单步（如 element-wise add）→ 无循环、单次搬运
      - 多步（如 softmax = max + sub + exp + sum + div）→ 多次计算、可能需要中间缓冲
