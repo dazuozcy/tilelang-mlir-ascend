@@ -1,0 +1,47 @@
+# reduction.yaml -- manifest entries for the 'reduction' family (NPU benchmark).
+#
+# Standalone spec; no dependency on the TileOPs repository.
+# See docs/gpu_to_npu_adaptation.md for the GPU-to-NPU adaptation notes.
+
+LogSumExpFwdOp:
+  ref_api: "torch.logsumexp"
+  family: reduction
+  status: implemented
+
+  signature:
+    inputs:
+      x: {dtype: "float16 | bfloat16"}
+    outputs:
+      output: {dtype: "same_as(x)"}
+    params:
+      dim: {type: "int | list[int] | tuple[int, ...]", default: -1}
+      keepdim: {type: bool, default: false}
+    shape_rules:
+    - "all(-x.ndim <= d < x.ndim for d in ([dim] if isinstance(dim, int) else dim))"
+    - "isinstance(dim, int) or len(dim) > 0"
+    - "isinstance(dim, int) or len({d % x.ndim for d in dim}) == len(dim)"
+    - "output.ndim == (x.ndim if keepdim else x.ndim - (1 if isinstance(dim, int) else len({d % x.ndim for d in dim})))"
+
+  workloads:
+    # Attention weight matrices
+  - {x_shape: [32, 32, 4096], dtypes: [float16, bfloat16], label: "attn-weights-4k"}
+  - {x_shape: [32, 32, 32768], dtypes: [bfloat16], label: "attn-weights-32k"}
+    # LM head logits
+  - {x_shape: [4, 102400], dtypes: [float16, bfloat16], label: "lm-head-logits"}
+  - {x_shape: [4, 128, 4096], dtypes: [float16], dim: [0, 2], label: "3d-multidim-reduce"}
+
+  roofline:
+    vars:
+      M: "product(x.shape[i] for i in range(x.ndim) if i not in ({dim % x.ndim} if isinstance(dim, int) else {d % x.ndim for d in dim}))"
+      N: "product(x.shape[i] for i in ({dim % x.ndim} if isinstance(dim, int) else {d % x.ndim for d in dim}))"
+    flops: "4 * M * N"
+    bytes: "(M * N + M) * elem_bytes"
+
+  source:
+    kernel: tileops/kernels/reduction/logsumexp.py
+    kernel_map:
+      logsumexp_fwd: LogSumExpKernel
+    op: tileops/ops/reduction/softmax.py
+    test: tests/ops/test_softmax.py
+    bench: benchmarks/ops/bench_softmax.py
+    bench_manifest_driven: true
