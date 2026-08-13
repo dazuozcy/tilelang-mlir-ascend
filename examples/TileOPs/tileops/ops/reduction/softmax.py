@@ -2,17 +2,18 @@
 
 Adaptation from GPU (TileOPs) to NPU:
 
-- ``_validate``: ``x.is_cuda`` → ``backend.is_device_tensor(x)``.
-- Kernel dispatch: ``LogSumExpKernel`` is the NPU PyTorch-native kernel
-  (no TileLang JIT).
+- ``_validate``: ``x.is_cuda`` → ``backend.is_device_tensor(x)`` (O1).
+- Kernel dispatch: ``LogSumExpKernel`` is a TileLang-based kernel
+  (NPUIR target).  The GPU TileLang kernel functions are extracted and
+  imported; the NPU component rewrites them for ``target="npuir"``.
 - ``eval_roofline``: identical arithmetic (roofline is device-agnostic).
-- Removed ``torch.library.custom_op`` wrapper — PyTorch-native ops are
-  already ``torch.compile``-traceable on NPU.
+- ``tune`` parameter removed (O3); kernel constructor takes
+  ``(M, N, op_kind, dtype, config=None, device_index=None)``.
+- ``from .compile_boundary import register_instance`` removed (O5).
 """
 
 from __future__ import annotations
 
-import warnings
 from math import prod
 from typing import Dict, List, Optional, Tuple, Union
 

@@ -38,7 +38,7 @@ LogSumExpFwdOp:
     bytes: "(M * N + M) * elem_bytes"
 
   source:
-    kernel: tileops/kernels/reduction/logsumexp.py
+    kernel: tileops/kernels/reduction/logsumexp/logsumexp.py
     kernel_map:
       logsumexp_fwd: LogSumExpKernel
     op: tileops/ops/reduction/softmax.py

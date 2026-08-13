@@ -95,7 +95,7 @@
 
 | # | GPU 原始代码 | NPU 适配 | 位置 | 说明 |
 |---|---|---|---|---|
-| O1 | `_logsumexp_kernel_single(M, N, dtype)` — `@tilelang.jit` + `@T.prim_func` 构建 CUDA 内核；返回的 callable 接受 `(block_m, threads)` | NPU 实现：`@tilelang.jit(target="npuir")` + `@T.prim_func` 构建 NPUIR 内核；callable 只接受 `block_m`（无 `threads`）；不做 alignment padding，直接用原始 N | `kernels/reduction/logsumexp.py` | NPU 无 `threads` 概念；NPUIR `vsel` 在 mask 与 tensor 形状不一致时报错，故不做 padding |
+| O1 | `_logsumexp_kernel_single(M, N, dtype)` — `@tilelang.jit` + `@T.prim_func` 构建 CUDA 内核；返回的 callable 接受 `(block_m, threads)` | NPU 实现：`@tilelang.jit(target="npuir")` + `@T.prim_func` 构建 NPUIR 内核；callable 只接受 `block_m`（无 `threads`）；不做 alignment padding，直接用原始 N | `kernels/reduction/logsumexp/logsumexp.py` | NPU 无 `threads` 概念；NPUIR `vsel` 在 mask 与 tensor 形状不一致时报错，故不做 padding |
 | O2 | `_logsumexp_kernel_tiled(M, N, dtype, tile_n)` — 多 tile 路径；返回的 callable 接受 `(block_m, threads)` | NPU 实现：`@tilelang.jit(target="npuir")`；callable 只接受 `block_m`（`tile_n` 已在闭包固化）；不做 alignment padding | 同上 | 同上 |
 | O3 | `_logsumexp_kernel(M, N, dtype, tile_n=0)` — 分发函数 | NPU 实现：分发到 single 或 tiled | 同上 | 同上 |
 
@@ -103,12 +103,12 @@
 
 | # | GPU 原始代码 | NPU 适配 | 位置 | 说明 |
 |---|---|---|---|---|
-| O4 | `supported_archs: list[int] = [80, 86, 89, 90]` | `supported_archs: Optional[list] = None` | `kernels/reduction/logsumexp.py` | CUDA SM 版本号 → `None`（全平台支持） |
+| O4 | `supported_archs: list[int] = [80, 86, 89, 90]` | `supported_archs: Optional[list] = None` | `kernels/reduction/logsumexp/logsumexp.py` | CUDA SM 版本号 → `None`（全平台支持） |
 | O5 | `device_smem_budget(device_index)` 内部调用 `torch.cuda.get_device_properties()` | `device_smem_budget` 适配为通过 `get_device_backend()` 查询设备属性 | `kernels/reduction/_primitives.py:device_smem_budget` | NPU 设备属性可能不暴露 `shared_memory_per_block_optin`，回退到默认 48 KiB |
-| O6 | `import tilelang; import tilelang.language as T` | **保留不变** — TileLang 在 NPU 上可用 | `kernels/reduction/logsumexp.py` | 无需适配 |
-| O7 | `@torch.library.custom_op("top::logsumexp_fwd", ...)` | 命名空间从 `"top::"` 改为 `"npub::"` | `kernels/reduction/logsumexp.py` | 避免与原始 TileOPs 冲突；custom_op 机制本身保留 |
+| O6 | `import tilelang; import tilelang.language as T` | **保留不变** — TileLang 在 NPU 上可用 | `kernels/reduction/logsumexp/logsumexp.py` | 无需适配 |
+| O7 | `@torch.library.custom_op("top::logsumexp_fwd", ...)` | 命名空间从 `"top::"` 改为 `"npub::"` | `kernels/reduction/logsumexp/logsumexp.py` | 避免与原始 TileOPs 冲突；custom_op 机制本身保留 |
 | O8 | `@_logsumexp_fwd_wrapped.register_fake` | **保留不变** | 同上 | fake tensor 实现不依赖 GPU |
-| O9 | custom_op wrapper 和 `register_fake` 签名包含 `threads: int` 参数 | 移除 `threads` 参数 | `kernels/reduction/logsumexp.py` | NPU 无线程概念；custom_op 签名从 `(M, N, dtype_str, block_m, threads, tile_n, x)` 改为 `(M, N, dtype_str, block_m, tile_n, x)` |
+| O9 | custom_op wrapper 和 `register_fake` 签名包含 `threads: int` 参数 | 移除 `threads` 参数 | `kernels/reduction/logsumexp/logsumexp.py` | NPU 无线程概念；custom_op 签名从 `(M, N, dtype_str, block_m, threads, tile_n, x)` 改为 `(M, N, dtype_str, block_m, tile_n, x)` |
 | O10 | `default_config` 返回 `{"block_m", "threads": 256, "tile_n"}` | 返回 `{"block_m", "tile_n"}`（移除 `"threads"` 键） | 同上 | NPU 无 threads 默认值 |
 | O11 | `__init__` 签名包含 `tune: bool = False`；`init_config(config, tune)` | 移除 `tune` 参数；`init_config(config)` | 同上 | NPU 不使用 autotune |
 | O12 | `autotune_configs` 属性 + `_tile_n_candidates` 方法 + `_MAX_TILE_N_CANDIDATES` 常量 | **全部移除** | 同上 | autotune 候选生成逻辑不再需要 |
@@ -154,7 +154,7 @@
 |---|---|---|
 | `tileops/kernels/kernel_base.py` | `tileops/kernels/kernel_base.py` | TileLang autotuner **移除**；`supported_archs` 类型放宽；`init_config` 简化 |
 | `tileops/kernels/reduction/_primitives.py` | `tileops/kernels/reduction/_primitives.py` | T.macro 工厂保留；`device_smem_budget` 适配为后端通用；`tune_by_forward` **移除** |
-| `tileops/kernels/reduction/logsumexp.py` (557 行) | `tileops/kernels/reduction/logsumexp.py` (~420 行) | NPU 工厂实现；`autotune`/`autotune_configs`/`_tile_n_candidates` **移除**；`threads` 全面移除；`supported_archs`、custom_op 命名空间适配 |
+| `tileops/kernels/reduction/logsumexp.py` (557 行) | `tileops/kernels/reduction/logsumexp/logsumexp.py` (~420 行) | NPU 工厂实现；`autotune`/`autotune_configs`/`_tile_n_candidates` **移除**；`threads` 全面移除；`supported_archs`、custom_op 命名空间适配 |
 | `tileops/ops/compile_boundary.py` | **移除** | torch.compile 分发边界暂未引入 |
 | `tileops/ops/_dtype_codegen.py` | **移除** | manifest 代码生成未引入 |
 | `tileops/ops/_roofline_codegen.py` | **移除** | 同上 |

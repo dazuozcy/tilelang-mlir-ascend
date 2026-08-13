@@ -6,7 +6,6 @@ Workloads and roofline formulas are loaded from the standalone manifest.
 
 import pytest
 import torch
-import torch.nn.functional as F
 
 from tileops.benchmark.benchmark_base import (
     BenchmarkReport,

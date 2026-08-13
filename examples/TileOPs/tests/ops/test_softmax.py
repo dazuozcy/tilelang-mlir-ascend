@@ -10,8 +10,8 @@ import torch
 from tileops.device import get_device_backend
 from tileops.ops.reduction.softmax import LogSumExpFwdOp
 from tileops.testing.test_base import TestBase
-from tileops.workloads.workload_base import FixtureBase
 from tileops.workloads.reduction import LogSumExpWorkload
+from tileops.workloads.workload_base import FixtureBase
 
 
 def _get_tolerances(dtype: torch.dtype) -> tuple[float, float]:

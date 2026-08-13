@@ -12,7 +12,6 @@ from tileops.benchmark.benchmark_base import (
     ManifestBenchmark,
     workloads_to_params,
 )
-from tileops.device import get_device_backend
 from tileops.ops.reduction.softmax import LogSumExpFwdOp
 from tileops.workloads.reduction import LogSumExpWorkload
 
