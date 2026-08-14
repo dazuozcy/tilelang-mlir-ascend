@@ -57,4 +57,5 @@ class FixtureMeta(type):
 
 class FixtureBase(metaclass=FixtureMeta):
     """Base class for reusable parametrize decorators."""
+
     PARAMS = []

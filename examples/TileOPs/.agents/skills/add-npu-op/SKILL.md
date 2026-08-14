@@ -71,7 +71,7 @@ benchmark) and extracts the GPU TileLang kernel functions via the
 extraction script, importing them into the kernel file. The NPU TileLang
 kernel *re-implementation* (adapting `@tilelang.jit` to `target="npuir"`
 
-+ `@T.prim_func` body) is authored by a separate NPU kernel component.
+- `@T.prim_func` body) is authored by a separate NPU kernel component.
 
 LogSumExpFwdOp is just reference example (reduction family), **not** universal templates.
 

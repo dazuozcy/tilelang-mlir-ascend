@@ -45,12 +45,10 @@ os.environ.setdefault("TILELANG_ASCEND_MODE", "Developer")
 
 import argparse
 
-import torch
-import torch_npu  # noqa: F401  (registers the "npu" device)
-
 import tilelang
 import tilelang.language as T
-
+import torch
+import torch_npu  # noqa: F401  (registers the "npu" device)
 
 # ---------- dtype / tolerance mapping ----------
 # Tolerances from examples/TileOPs/tests/ops/test_softmax.py _get_tolerances().
@@ -132,12 +130,13 @@ def _logsumexp_kernel_tiled(M, N, dtype, tile_n):
                 # (host wrapper pads), so every tile is a full tile_n columns.
                 num_tiles = T.ceildiv(N, tile_n)
                 for t in T.serial(num_tiles):
-
                     # 1. Load tile: GM -> UB (sliced by real_m for row-tail) -> Fragment.
                     #    Full tile_n columns (N is tile-aligned via host padding).
                     T.copy(
-                        x[pid_m * block_m : pid_m * block_m + real_m,
-                          t * tile_n : (t + 1) * tile_n],
+                        x[
+                            pid_m * block_m : pid_m * block_m + real_m,
+                            t * tile_n : (t + 1) * tile_n,
+                        ],
                         shared_buf[0:real_m, 0:tile_n],
                     )
                     T.copy(shared_buf, tile_local)
@@ -204,9 +203,7 @@ def _run_case(M, N, dtype_str, block_m, tile_n, tag):
     # Mathematically exact: logsumexp([x, -inf...]) == logsumexp(x).
     n_padded = ((N + tile_n - 1) // tile_n) * tile_n
     if n_padded > N:
-        x_pad = torch.full(
-            (M, n_padded), float("-inf"), dtype=torch_dtype, device="npu"
-        )
+        x_pad = torch.full((M, n_padded), float("-inf"), dtype=torch_dtype, device="npu")
         x_pad[:, :N] = x
     else:
         x_pad = x
@@ -230,16 +227,16 @@ def _run_case(M, N, dtype_str, block_m, tile_n, tag):
 # block_m values.
 def run_L0():
     cases = [
-        (4, 32768, "float16", 4, 2048),    # L0-1 manifest attn-weights-32k
-        (4, 102400, "float16", 4, 2048),   # L0-2 manifest lm-head-logits
+        (4, 32768, "float16", 4, 2048),  # L0-1 manifest attn-weights-32k
+        (4, 102400, "float16", 4, 2048),  # L0-2 manifest lm-head-logits
         (4, 102400, "bfloat16", 4, 2048),  # L0-3 bf16 huge N
         (1024, 4096, "float16", 8, 2048),  # L0-4 manifest attn-weights-4k
-        (4, 5000, "float16", 4, 2048),     # L0-5 tail pad (5000%2048=904)
-        (33, 4096, "float16", 8, 2048),    # L0-6 row-tail (33%8=1)
-        (4, 32768, "float32", 4, 2048),    # L0-7 fp32 large N
-        (1, 102400, "float16", 1, 4096),   # L0-8 tiny M + large tile_n
-        (128, 4096, "float16", 8, 1024),   # L0-9 larger M + smaller tile_n
-        (4, 300, "float16", 4, 128),       # L0-10 small N pad (300%128=44)
+        (4, 5000, "float16", 4, 2048),  # L0-5 tail pad (5000%2048=904)
+        (33, 4096, "float16", 8, 2048),  # L0-6 row-tail (33%8=1)
+        (4, 32768, "float32", 4, 2048),  # L0-7 fp32 large N
+        (1, 102400, "float16", 1, 4096),  # L0-8 tiny M + large tile_n
+        (128, 4096, "float16", 8, 1024),  # L0-9 larger M + smaller tile_n
+        (4, 300, "float16", 4, 128),  # L0-10 small N pad (300%128=44)
     ]
     max_diff = 0.0
     for M, N, dtype_str, block_m, tile_n in cases:
@@ -250,13 +247,13 @@ def run_L0():
 # ---------- L1: functional coverage (must pass) ----------
 def run_L1():
     cases = [
-        (128, 16384, "float16", 8, 2048),   # 3d-multidim-reduce (4,128,4096,dim=[0,2])
-        (128, 16384, "float32", 8, 2048),   # same, fp32
-        (4, 8192, "bfloat16", 4, 2048),     # bf16 multi-tile
-        (4, 32768, "float16", 4, 4096),     # tile_n=4096 multi-tile (bm=4 per DESIGN §4.5)
-        (17, 6144, "float16", 16, 1024),    # row-tail 17%16=1 + tile_n=1024
-        (2, 5000, "float32", 2, 2048),      # small M + unaligned N fp32
-        (256, 2048, "float16", 16, 512),    # larger M + small tile_n (4 tiles)
+        (128, 16384, "float16", 8, 2048),  # 3d-multidim-reduce (4,128,4096,dim=[0,2])
+        (128, 16384, "float32", 8, 2048),  # same, fp32
+        (4, 8192, "bfloat16", 4, 2048),  # bf16 multi-tile
+        (4, 32768, "float16", 4, 4096),  # tile_n=4096 multi-tile (bm=4 per DESIGN §4.5)
+        (17, 6144, "float16", 16, 1024),  # row-tail 17%16=1 + tile_n=1024
+        (2, 5000, "float32", 2, 2048),  # small M + unaligned N fp32
+        (256, 2048, "float16", 16, 512),  # larger M + small tile_n (4 tiles)
     ]
     max_diff = 0.0
     for M, N, dtype_str, block_m, tile_n in cases:
@@ -267,10 +264,10 @@ def run_L1():
 # ---------- L2: boundary (warn only, non-blocking) ----------
 def run_L2():
     cases = [
-        (1, 1, "float16", 1, 128),         # minimal (N < tile_n, padded to 1 tile)
-        (8, 2048, "float16", 8, 2048),     # exact divide M=block_m, N=tile_n (1 tile)
-        (9, 2048, "float16", 8, 2048),     # M=block_m+1 (row-tail)
-        (4, 2049, "float16", 4, 2048),     # N=tile_n+1 (2 tiles after padding)
+        (1, 1, "float16", 1, 128),  # minimal (N < tile_n, padded to 1 tile)
+        (8, 2048, "float16", 8, 2048),  # exact divide M=block_m, N=tile_n (1 tile)
+        (9, 2048, "float16", 8, 2048),  # M=block_m+1 (row-tail)
+        (4, 2049, "float16", 4, 2048),  # N=tile_n+1 (2 tiles after padding)
     ]
     for M, N, dtype_str, block_m, tile_n in cases:
         try:

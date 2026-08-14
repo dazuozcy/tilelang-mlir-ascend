@@ -83,17 +83,11 @@ class LogSumExpFwdOp(Op):
         """
         backend = get_device_backend()
         if not backend.is_device_tensor(x):
-            raise ValueError(
-                f"x must be a {backend.name} tensor, got device {x.device}"
-            )
+            raise ValueError(f"x must be a {backend.name} tensor, got device {x.device}")
         if x.dtype not in (torch.float16, torch.bfloat16, torch.float32):
-            raise ValueError(
-                f"x.dtype must be float16, bfloat16, or float32, got {x.dtype}"
-            )
+            raise ValueError(f"x.dtype must be float16, bfloat16, or float32, got {x.dtype}")
         if self._committed_dtype is not None and x.dtype != self._committed_dtype:
-            raise ValueError(
-                f"Expected x.dtype {self._committed_dtype}, got {x.dtype}"
-            )
+            raise ValueError(f"Expected x.dtype {self._committed_dtype}, got {x.dtype}")
         if x.ndim == 0:
             raise ValueError("Input tensor must be at least 1D")
         self.dtype = x.dtype
@@ -111,7 +105,9 @@ class LogSumExpFwdOp(Op):
 
         if isinstance(effective_dim, (list, tuple)) or effective_dim is None:
             dims = normalize_dim(
-                effective_dim, x.ndim, empty_dim_policy=self._empty_dim_policy,
+                effective_dim,
+                x.ndim,
+                empty_dim_policy=self._empty_dim_policy,
             )
             self._static_axes = frozenset((0, d) for d in dims)
             x, orig_shape, _kept = flatten_for_multidim(x, dims)
@@ -121,7 +117,10 @@ class LogSumExpFwdOp(Op):
             self._last_roofline_spec = (M, N, dtype)
             x = x.reshape(M, N)
             kernel = self._get_or_create_kernel(
-                M, N, dtype=dtype, device_index=x.device.index if hasattr(x.device, 'index') else None,
+                M,
+                N,
+                dtype=dtype,
+                device_index=x.device.index if hasattr(x.device, "index") else None,
             )
             self.kernel = kernel
             y = kernel(x)
@@ -153,7 +152,10 @@ class LogSumExpFwdOp(Op):
         x = x.contiguous().reshape(M, N)
 
         kernel = self._get_or_create_kernel(
-            M, N, dtype=dtype, device_index=x.device.index if hasattr(x.device, 'index') else None,
+            M,
+            N,
+            dtype=dtype,
+            device_index=x.device.index if hasattr(x.device, "index") else None,
         )
         self.kernel = kernel
 
@@ -182,7 +184,10 @@ class LogSumExpFwdOp(Op):
         if key not in self._kernel_cache:
             kernel_cls = self.kernel_map[self._kernel_key]
             self._kernel_cache[key] = kernel_cls(
-                M, N, self._op_kind, dtype,
+                M,
+                N,
+                self._op_kind,
+                dtype,
                 device_index=device_index,
             )
         return self._kernel_cache[key]

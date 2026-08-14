@@ -57,7 +57,8 @@ def normalize_dim(
 
 
 def flatten_for_multidim(
-    x: torch.Tensor, dims: list[int],
+    x: torch.Tensor,
+    dims: list[int],
 ) -> tuple[torch.Tensor, torch.Size, list[int]]:
     orig_shape = x.shape
     ndim = x.ndim

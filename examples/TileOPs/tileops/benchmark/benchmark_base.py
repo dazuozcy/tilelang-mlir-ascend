@@ -28,8 +28,10 @@ Adaptation from GPU (TileOPs) to NPU:
 
 from __future__ import annotations
 
+import glob
 import logging
 import os
+import shutil
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -50,6 +52,11 @@ try:
     from tileops.benchmark.msprof import bench_kernel_msprof
 except ImportError:
     bench_kernel_msprof = None  # type: ignore[assignment]
+
+try:
+    from tileops.benchmark.msprof_roofline import parse_bin_file
+except ImportError:
+    parse_bin_file = None  # type: ignore[assignment]
 
 W = TypeVar("W")
 
@@ -163,11 +170,12 @@ def _bench_with_mode(
     functor: Callable,
     args: tuple = (),
     mode: Optional[str] = None,
-) -> tuple[float, str]:
+) -> tuple[float, str, Optional[str]]:
     """Dispatch to events or msprof profiling based on *mode* / env var.
 
-    Returns ``(latency_ms, prof_mode)`` where *prof_mode* is either
-    ``"events"`` or ``"msprof"``.
+    Returns ``(latency_ms, prof_mode, prof_output_dir)`` where *prof_mode*
+    is either ``"events"`` or ``"msprof"``, and *prof_output_dir* is the
+    path to the msprof output directory (or ``None`` for events mode).
 
     When ``TILEOPS_PROF_MODE=msprof`` (or *mode*="msprof"), attempts
     msprof profiling.  If the functor is not supported by msprof (e.g.
@@ -182,7 +190,7 @@ def _bench_with_mode(
             _logger.warning(
                 "TILEOPS_PROF_MODE=msprof but msprof module is unavailable; falling back to events."
             )
-            return bench_kernel(functor, args=args), "events"
+            return bench_kernel(functor, args=args), "events", None
         try:
             # Call functor once in-process so that Op state (e.g. roofline
             # spec, kernel cache) is initialized before msprof runs it in
@@ -191,17 +199,33 @@ def _bench_with_mode(
             backend = get_device_backend()
             backend.synchronize()
 
-            latency = bench_kernel_msprof(functor, args=args)
-            return latency, "msprof"
+            latency, prof_output_dir = bench_kernel_msprof(functor, args=args)
+            return latency, "msprof", prof_output_dir
         except (TypeError, RuntimeError, FileNotFoundError) as e:
             _logger.warning(
                 "msprof profiling failed (%s: %s); falling back to events.",
                 type(e).__name__,
                 e,
             )
-            return bench_kernel(functor, args=args), "events"
+            return bench_kernel(functor, args=args), "events", None
 
-    return bench_kernel(functor, args=args), "events"
+    return bench_kernel(functor, args=args), "events", None
+
+
+def _cleanup_msprof_output(prof_output_dir: Optional[str]) -> None:
+    """Remove msprof temp workspace after roofline parsing is done.
+
+    Only cleans up auto-created temp directories (prefix ``tileops_msprof_``);
+    user-specified output dirs (``TILEOPS_MSPROF_OUTPUT_DIR``) are left intact,
+    as are outputs when ``TILEOPS_MSPROF_KEEP_OUTPUT=1``.
+    """
+    if not prof_output_dir:
+        return
+    if os.environ.get("TILEOPS_MSPROF_KEEP_OUTPUT") == "1":
+        return
+    parent = os.path.dirname(os.path.abspath(prof_output_dir))
+    if os.path.basename(parent).startswith("tileops_msprof_"):
+        shutil.rmtree(parent, ignore_errors=True)
 
 
 class BenchmarkBase(Generic[W], ABC):
@@ -220,21 +244,117 @@ class BenchmarkBase(Generic[W], ABC):
 
     def profile(self, functor: Any, *inputs: Any, mode: Optional[str] = None) -> dict:
         with torch.no_grad():
-            latency, prof_mode = _bench_with_mode(functor, args=inputs, mode=mode)
-        result = self._build_result(latency)
+            latency, prof_mode, prof_output_dir = _bench_with_mode(functor, args=inputs, mode=mode)
+        try:
+            result = self._build_result(
+                latency, prof_mode=prof_mode, prof_output_dir=prof_output_dir
+            )
+        finally:
+            _cleanup_msprof_output(prof_output_dir)
         result["prof_mode"] = prof_mode
         return result
 
-    def _build_result(self, latency: float) -> dict:
+    def _build_result(
+        self,
+        latency: float,
+        *,
+        prof_mode: str = "events",
+        prof_output_dir: Optional[str] = None,
+    ) -> dict:
         latency_us = latency * 1000.0
         result: dict[str, Any] = {"latency_us": latency_us}
+
+        if prof_mode == "msprof" and prof_output_dir and parse_bin_file is not None:
+            roofline_metrics = self._parse_msprof_roofline(prof_output_dir)
+            if roofline_metrics is not None:
+                result.update(roofline_metrics)
+                self._dump_roofline_log(roofline_metrics)
+                print(f"=== [msprof] latency_us: {latency_us}, roofline: {roofline_metrics}")
+                return result
+
+            _logger.warning("msprof roofline parsing failed; falling back to theoretical metrics.")
+
         flops = self.calculate_flops()
         if flops is not None:
             result["tflops"] = flops / latency * 1e-9
         memory = self.calculate_memory()
         if memory is not None:
             result["bandwidth_tbs"] = memory / latency * 1e-9
+
         return result
+
+    @staticmethod
+    def _parse_msprof_roofline(
+        prof_output_dir: str,
+    ) -> Optional[dict[str, Any]]:
+        """Parse ``visualize_data.bin`` and extract ``GM Read + Write`` roofline metrics.
+
+        Searches *prof_output_dir* recursively for ``visualize_data.bin``,
+        calls :func:`parse_bin_file`, and filters the roofline entries for
+        the ``GM Read + Write`` bandwidth point.
+
+        Returns:
+            Dict with ``roofline_*`` keys, or ``None`` if the bin file is
+            not found or no matching entry exists.
+        """
+        bin_files = sorted(
+            glob.glob(
+                os.path.join(prof_output_dir, "**", "visualize_data.bin"),
+                recursive=True,
+            )
+        )
+        if not bin_files:
+            _logger.warning("visualize_data.bin not found under %s", prof_output_dir)
+            return None
+
+        try:
+            bin_data = parse_bin_file(bin_files[0])
+        except Exception as e:
+            _logger.warning("parse_bin_file failed for %s: %s", bin_files[0], e)
+            return None
+
+        entries = bin_data.get("roofline_entries", [])
+        gm_entries = [
+            e
+            for e in entries
+            if e.get("title") == "GM/L2" and "GM Read + Write" in e.get("bw_name", "")
+        ]
+        if not gm_entries:
+            gm_entries = [
+                e
+                for e in entries
+                if "GM" in e.get("bw_name", "")
+                and ("GM/L2" in e.get("title", "") or "Memory Unit" in e.get("title", ""))
+            ]
+        if not gm_entries:
+            _logger.warning("No 'GM Read + Write' roofline entry found in %s", bin_files[0])
+            return None
+
+        gm = gm_entries[0]
+        return {
+            "Ratio(%)": gm["ratio"] * 100,
+            "Bandwidth(TB/s)": gm["bw"],
+            "AI(Ops/Byte)": gm["AI"],
+            "Perf(TOps/s)": gm["performance"],
+            "Computility(TOps/s)": gm["computility"],
+            # "roofline_bw_name": gm.get("bw_name", ""),
+            # "roofline_title": gm.get("title", ""),
+        }
+
+    @staticmethod
+    def _dump_roofline_log(roofline_metrics: dict[str, Any]) -> None:
+        """Append roofline metrics to ``profile_run.log``."""
+        log_path = "profile_run.log"
+        lines = ["=== Roofline Metrics (GM Read + Write) ==="]
+        for key in sorted(roofline_metrics):
+            val = roofline_metrics[key]
+            if isinstance(val, float):
+                lines.append(f"  {key}: {val:.9f}")
+            else:
+                lines.append(f"  {key}: {val}")
+        lines.append("")
+        with open(log_path, "a") as f:
+            f.write("\n".join(lines) + "\n")
 
 
 def _workload_extra_params(w: dict, shape_key: str) -> dict[str, Any]:
@@ -402,7 +522,10 @@ class BenchmarkReport:
         lines.append(f"- **Profiling mode**: {BenchmarkReport._prof_mode}")
         lines.append("")
 
-        default_result_keys = ["latency_us", "tflops", "bandwidth_tbs"]
+        if BenchmarkReport._prof_mode == "msprof":
+            default_result_keys = ["latency_us"]
+        else:
+            default_result_keys = ["latency_us", "tflops", "bandwidth_tbs"]
 
         for name, entries in BenchmarkReport._records.items():
             if not entries:
@@ -436,7 +559,7 @@ class BenchmarkReport:
                     header_parts.append("config")
                 header_parts.extend(trailing_keys)
                 lines.append("| " + " | ".join(header_parts) + " |")
-                lines.append("| " + " | ".join(["---"] * len(header_parts)) + " |")
+                # lines.append("| " + " | ".join(["---"] * len(header_parts)) + " |")
 
                 for entry in tag_group:
                     row = [str(entry["params"].get(k, "")) for k in param_keys]

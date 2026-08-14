@@ -19,8 +19,9 @@ Adaptation summary:
      implementations using ``@tilelang.jit`` + ``@T.prim_func`` targeting
      Ascend (NPUIR).  No alignment padding; operates on raw N.
 """
-import os
+
 import functools
+import os
 from typing import Optional
 
 import tilelang
@@ -99,7 +100,7 @@ def _logsumexp_kernel_single(M, N, dtype):
                 T.reduce_max(x_f32, max_sh, dim=1, clear=True)
 
                 # 3. exp_f32 = exp(x_f32 - row_max)  (in-place: reuse x_f32)
-                T.vsub(x_f32, max_sh, x_f32)    # broadcast (block_m,N)-(block_m,1)
+                T.vsub(x_f32, max_sh, x_f32)  # broadcast (block_m,N)-(block_m,1)
                 T.vexp(x_f32, x_f32)
 
                 # 4. row_sum = reduce_sum(exp_f32, dim=1)
@@ -364,7 +365,10 @@ class LogSumExpKernel(Kernel):
         col_budget = MAX_SINGLE_TILE_COLS * block_m * self._elem_bytes
         effective_budget = min(budget, col_budget)
         return compute_tile_n(
-            block_m, self._elem_bytes, self.N_padded, budget=effective_budget,
+            block_m,
+            self._elem_bytes,
+            self.N_padded,
+            budget=effective_budget,
         )
 
     @property

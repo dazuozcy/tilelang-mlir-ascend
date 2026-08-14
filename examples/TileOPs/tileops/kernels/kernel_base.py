@@ -55,7 +55,7 @@ class Kernel(ABC):
     @staticmethod
     def dtype_to_str(dtype: torch.dtype) -> str:
         """Convert a torch dtype to the TileLang dtype string."""
-        return str(dtype).split('.')[-1]
+        return str(dtype).split(".")[-1]
 
     @property
     def default_config(self) -> Dict[str, Any]:

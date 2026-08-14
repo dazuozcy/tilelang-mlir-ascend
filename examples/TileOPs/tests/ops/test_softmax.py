@@ -32,7 +32,9 @@ class LogSumExpFixture(FixtureBase):
         (
             "shape, dim, dtype",
             [
-                pytest.param((32, 256), -1, torch.float32, marks=[pytest.mark.smoke, pytest.mark.packaging]),
+                pytest.param(
+                    (32, 256), -1, torch.float32, marks=[pytest.mark.smoke, pytest.mark.packaging]
+                ),
                 pytest.param((32, 256), -1, torch.float16, marks=[pytest.mark.smoke]),
                 pytest.param((32, 256), -1, torch.bfloat16, marks=[pytest.mark.smoke]),
                 pytest.param((32, 300), -1, torch.float32, marks=[pytest.mark.full]),

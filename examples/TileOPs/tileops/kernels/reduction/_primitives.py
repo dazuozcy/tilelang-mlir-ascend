@@ -221,8 +221,8 @@ def tune_by_forward(kernel, *probe_inputs, warmup: int = 10, rep: int = 10) -> N
         return
 
     backend = get_device_backend()
-    print(f'Start autotuning {kernel.__class__.__name__} (tiled path)...')
-    best_config, best_time = configs[0], float('inf')
+    print(f"Start autotuning {kernel.__class__.__name__} (tiled path)...")
+    best_config, best_time = configs[0], float("inf")
     for cfg in configs:
         kernel.config = cfg
         for _ in range(warmup):
@@ -242,7 +242,7 @@ def tune_by_forward(kernel, *probe_inputs, warmup: int = 10, rep: int = 10) -> N
             best_time, best_config = elapsed, cfg
 
     kernel.config = best_config
-    print(f'Best config: {kernel.config}')
+    print(f"Best config: {kernel.config}")
 
 
 def make_reduce_epilogue(op_kind: str):

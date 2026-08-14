@@ -15,6 +15,7 @@ str2dtype = {
 def get_device_str() -> str:
     """Return the current backend's device string (e.g. ``"npu"``, ``"cuda"``)."""
     from tileops.device import get_device_backend
+
     return get_device_backend().name
 
 

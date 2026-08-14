@@ -18,6 +18,7 @@ Usage:
 If ``--out`` is omitted the result is written to ``extracted_<OpName>.py`` in
 the current working directory.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,6 +36,7 @@ import yaml
 # --------------------------------------------------------------------------- #
 # Manifest loading (parse YAML directly; never import the tileops package)
 # --------------------------------------------------------------------------- #
+
 
 def load_manifest_entry(op_name: str, repo_root: Path) -> dict[str, Any]:
     """Return the merged manifest entry for *op_name*.
@@ -67,9 +69,8 @@ def load_manifest_entry(op_name: str, repo_root: Path) -> dict[str, Any]:
 # Target kernel class name resolution
 # --------------------------------------------------------------------------- #
 
-def resolve_kernel_class_names(
-    entry: dict[str, Any], op_name: str, repo_root: Path
-) -> list[str]:
+
+def resolve_kernel_class_names(entry: dict[str, Any], op_name: str, repo_root: Path) -> list[str]:
     """Return the kernel class name(s) declared for this op.
 
     Resolution order (prefers the op's own ``default_kernel_map`` because it
@@ -91,8 +92,7 @@ def resolve_kernel_class_names(
             names = [v for v in kmap.values() if isinstance(v, str)]
             if names:
                 return names
-        raise ValueError(
-            f"op '{op_name}': no 'source.op' and no 'source.kernel_map'")
+        raise ValueError(f"op '{op_name}': no 'source.op' and no 'source.kernel_map'")
 
     repo_root = repo_root.resolve()
     op_file = repo_root / op_rel
@@ -128,7 +128,8 @@ def resolve_kernel_class_names(
     raise ValueError(
         f"could not determine kernel class for '{op_name}': define "
         f"default_kernel_map/kernel_cls in {op_file} or add 'source.kernel_map' "
-        f"to the manifest")
+        f"to the manifest"
+    )
 
 
 def _find_class(tree: ast.Module, name: str) -> ast.ClassDef | None:
@@ -156,9 +157,7 @@ def _names_from_returned_dict(method: ast.FunctionDef) -> list[str]:
     return names
 
 
-def _resolve_self_attr_in_mro(
-    mro: list[tuple[Path, ast.ClassDef]], attr_name: str
-) -> str | None:
+def _resolve_self_attr_in_mro(mro: list[tuple[Path, ast.ClassDef]], attr_name: str) -> str | None:
     """Resolve ``self.<attr_name>`` to a class attribute value via the MRO.
 
     Looks for ``<attr_name> = <Name>`` class-level assignments in the MRO
@@ -190,8 +189,11 @@ def _names_from_default_kernel_map(
         for v in node.value.values:
             if isinstance(v, ast.Name) and v.id not in names:
                 names.append(v.id)
-            elif (isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name)
-                    and v.value.id == "self"):
+            elif (
+                isinstance(v, ast.Attribute)
+                and isinstance(v.value, ast.Name)
+                and v.value.id == "self"
+            ):
                 # self._kernel_class → resolve via MRO class attribute.
                 resolved = _resolve_self_attr_in_mro(mro, v.attr)
                 if resolved and resolved not in names:
@@ -204,13 +206,18 @@ def _class_attr_name_value(cls: ast.ClassDef, attr_name: str) -> str | None:
     for node in cls.body:
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
-                if (isinstance(tgt, ast.Name) and tgt.id == attr_name
-                        and isinstance(node.value, ast.Name)):
+                if (
+                    isinstance(tgt, ast.Name)
+                    and tgt.id == attr_name
+                    and isinstance(node.value, ast.Name)
+                ):
                     return node.value.id
-        elif (isinstance(node, ast.AnnAssign)
-                and isinstance(node.target, ast.Name)
-                and node.target.id == attr_name
-                and isinstance(node.value, ast.Name)):
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == attr_name
+            and isinstance(node.value, ast.Name)
+        ):
             return node.value.id
     return None
 
@@ -218,6 +225,7 @@ def _class_attr_name_value(cls: ast.ClassDef, attr_name: str) -> str | None:
 # --------------------------------------------------------------------------- #
 # Per-file symbol table
 # --------------------------------------------------------------------------- #
+
 
 @dataclass
 class ImportInfo:
@@ -350,6 +358,7 @@ class _Loader:
 # Reference collection
 # --------------------------------------------------------------------------- #
 
+
 def _collect_refs(node: ast.AST) -> set[str]:
     """Return the set of ``ast.Name`` ids referenced anywhere under *node*."""
     refs: set[str] = set()
@@ -390,9 +399,7 @@ def _collect_refs(node: ast.AST) -> set[str]:
 # reachable ``@tilelang.jit`` functions).
 
 
-def _resolve_name_location(
-    loader: _Loader, file: Path, name: str
-) -> tuple[Path, ast.AST] | None:
+def _resolve_name_location(loader: _Loader, file: Path, name: str) -> tuple[Path, ast.AST] | None:
     """Return (file, node) where *name* is defined, following imports."""
     st = loader.load(file)
     if name in st.defs:
@@ -440,10 +447,12 @@ def _find_self_kernel_assignment(
                 if not isinstance(n, ast.Assign) or len(n.targets) != 1:
                     continue
                 tgt = n.targets[0]
-                if (isinstance(tgt, ast.Attribute)
-                        and isinstance(tgt.value, ast.Name)
-                        and tgt.value.id == "self"
-                        and tgt.attr == "kernel"):
+                if (
+                    isinstance(tgt, ast.Attribute)
+                    and isinstance(tgt.value, ast.Name)
+                    and tgt.value.id == "self"
+                    and tgt.attr == "kernel"
+                ):
                     return (file, item, n)
     return None
 
@@ -460,15 +469,21 @@ def _find_method_in_mro(
 
 def _extract_strategy_str(test: ast.expr) -> str | None:
     """Return the string literal from ``<strategy> == "X"`` (or reversed)."""
-    if (isinstance(test, ast.Compare) and len(test.ops) == 1
-            and isinstance(test.ops[0], ast.Eq) and len(test.comparators) == 1):
-        for left, right in ((test.left, test.comparators[0]),
-                            (test.comparators[0], test.left)):
+    if (
+        isinstance(test, ast.Compare)
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+    ):
+        for left, right in ((test.left, test.comparators[0]), (test.comparators[0], test.left)):
             if not (isinstance(left, ast.Constant) and isinstance(left.value, str)):
                 continue
             ok = (isinstance(right, ast.Name) and right.id == "strategy") or (
-                isinstance(right, ast.Attribute) and right.attr == "strategy"
-                and isinstance(right.value, ast.Name) and right.value.id == "self")
+                isinstance(right, ast.Attribute)
+                and right.attr == "strategy"
+                and isinstance(right.value, ast.Name)
+                and right.value.id == "self"
+            )
             if ok:
                 return left.value
     return None
@@ -480,13 +495,16 @@ def _parse_strategy_branches(method: ast.FunctionDef) -> dict[str, str]:
     for node in ast.walk(method):
         if not isinstance(node, ast.If):
             continue
-        strat = _extract_strategy_str(node.test)
-        if strat is None:
+        strategy = _extract_strategy_str(node.test)
+        if strategy is None:
             continue
         for stmt in node.body:
-            if (isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Call)
-                    and isinstance(stmt.value.func, ast.Name)):
-                branches[strat] = stmt.value.func.id
+            if (
+                isinstance(stmt, ast.Return)
+                and isinstance(stmt.value, ast.Call)
+                and isinstance(stmt.value.func, ast.Name)
+            ):
+                branches[strategy] = stmt.value.func.id
     return branches
 
 
@@ -494,8 +512,11 @@ def _direct_return_calls(method: ast.FunctionDef) -> list[str]:
     """Return function names from bare ``return <name>(...)`` statements."""
     names: list[str] = []
     for n in ast.walk(method):
-        if (isinstance(n, ast.Return) and isinstance(n.value, ast.Call)
-                and isinstance(n.value.func, ast.Name)):
+        if (
+            isinstance(n, ast.Return)
+            and isinstance(n.value, ast.Call)
+            and isinstance(n.value.func, ast.Name)
+        ):
             names.append(n.value.func.id)
     return list(dict.fromkeys(names))
 
@@ -507,21 +528,23 @@ def _resolve_default_strategy(mro: list[tuple[Path, ast.ClassDef]]) -> str | Non
             if not isinstance(item, ast.Assign) or len(item.targets) != 1:
                 continue
             tgt = item.targets[0]
-            if (isinstance(tgt, ast.Name) and tgt.id == "DEFAULT_STRATEGY"
-                    and isinstance(item.value, ast.Constant)
-                    and isinstance(item.value.value, str)):
+            if (
+                isinstance(tgt, ast.Name)
+                and tgt.id == "DEFAULT_STRATEGY"
+                and isinstance(item.value, ast.Constant)
+                and isinstance(item.value.value, str)
+            ):
                 return item.value.value
     return None
 
 
 def _find_op_func_in_mro(
-    mro: list[tuple[Path, ast.ClassDef]]
+    mro: list[tuple[Path, ast.ClassDef]],
 ) -> tuple[Path, ast.FunctionDef] | None:
     """Find the ``op_func`` static method on the kernel class or its bases."""
     for file, cls in mro:
         for item in cls.body:
-            if (isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and item.name == "op_func"):
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == "op_func":
                 return (file, item)
     return None
 
@@ -545,8 +568,7 @@ def _op_name_to_snake(op_name: str) -> str:
 def _contains_call_to(node: ast.AST, name: str) -> bool:
     """Return True if *node* contains a ``name(...)`` call."""
     for n in ast.walk(node):
-        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                and n.func.id == name):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name:
             return True
     return False
 
@@ -609,10 +631,8 @@ def _inline_op_func(
         class _Replacer(ast.NodeTransformer):
             def visit_Call(self, c: ast.Call) -> ast.AST:
                 self.generic_visit(c)
-                if (isinstance(c.func, ast.Name) and c.func.id == "op_func"
-                        and len(c.args) >= 1):
-                    return ast.copy_location(
-                        _substitute_param(return_expr, c.args[0]), c)
+                if isinstance(c.func, ast.Name) and c.func.id == "op_func" and len(c.args) >= 1:
+                    return ast.copy_location(_substitute_param(return_expr, c.args[0]), c)
                 return c
 
         return _Replacer().visit(node)
@@ -647,6 +667,7 @@ def _inline_op_func(
 @dataclass
 class EmitTarget:
     """A definition to emit in the extracted file."""
+
     file: Path
     node: ast.AST
     kind: str  # "tl_kernel" (a @tilelang.jit builder) or "op_func" (per-op math)
@@ -658,6 +679,7 @@ class EmitTarget:
 # --------------------------------------------------------------------------- #
 # Extractor
 # --------------------------------------------------------------------------- #
+
 
 def _has_tilelang_jit(node: ast.AST) -> bool:
     """Return True if *node* contains a function decorated with ``@tilelang.jit``.
@@ -673,10 +695,12 @@ def _has_tilelang_jit(node: ast.AST) -> bool:
             continue
         for dec in n.decorator_list:
             target = dec.func if isinstance(dec, ast.Call) else dec
-            if (isinstance(target, ast.Attribute)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "tilelang"
-                    and target.attr == "jit"):
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "tilelang"
+                and target.attr == "jit"
+            ):
                 return True
     return False
 
@@ -686,9 +710,7 @@ def _has_tilelang_jit(node: ast.AST) -> bool:
 _ROOT_BASE_NAMES = frozenset({"Kernel", "ABC", "object"})
 
 
-def _has_intermediate_base(
-    loader: _Loader, kernel_file: Path, kernel_class_name: str
-) -> bool:
+def _has_intermediate_base(loader: _Loader, kernel_file: Path, kernel_class_name: str) -> bool:
     """Return True if the kernel class inherits from a non-root base class.
 
     Pattern A (op_func inlining) is only used when the kernel class has an
@@ -750,9 +772,7 @@ class Extractor:
 
     # -- entry point ------------------------------------------------------ #
 
-    def extract(
-        self, kernel_file: Path, kernel_class_names: list[str], op_name: str
-    ) -> str:
+    def extract(self, kernel_file: Path, kernel_class_names: list[str], op_name: str) -> str:
         self.targets = self._resolve_targets(kernel_file, kernel_class_names, op_name)
         targets = self.targets
 
@@ -831,11 +851,12 @@ class Extractor:
         for name in builder_names:
             loc = _resolve_name_location(self.loader, kernel_file, name)
             if loc is None:
-                self.warnings.append(
-                    f"Pattern A: could not locate builder '{name}'; skipping.")
+                self.warnings.append(f"Pattern A: could not locate builder '{name}'; skipping.")
                 continue
             loc_file, loc_node = loc
-            if isinstance(loc_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _has_tilelang_jit(loc_node):
+            if isinstance(loc_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _has_tilelang_jit(
+                loc_node
+            ):
                 tl_targets.append(EmitTarget(loc_file, loc_node, "tl_kernel"))
 
         op_func_loc = _find_op_func_in_mro(mro)
@@ -852,10 +873,14 @@ class Extractor:
             merged_ast = _inline_op_func(builder_node, op_func_node, merged_name)
             # Keep the original builder node (for discovery/imports) and set
             # merged_ast for emission.
-            return [EmitTarget(
-                tl_targets[0].file, builder_node, "tl_kernel",
-                merged_ast=merged_ast,
-            )]
+            return [
+                EmitTarget(
+                    tl_targets[0].file,
+                    builder_node,
+                    "tl_kernel",
+                    merged_ast=merged_ast,
+                )
+            ]
 
         # Fall back: emit builder(s) and op_func separately.
         targets = list(tl_targets)
@@ -868,9 +893,12 @@ class Extractor:
     ) -> list[str]:
         """Map the RHS of ``self.kernel = <rhs>`` to builder function names."""
         # self.<method>(...)  e.g. self._build_kernel(self.strategy)
-        if (isinstance(rhs, ast.Call) and isinstance(rhs.func, ast.Attribute)
-                and isinstance(rhs.func.value, ast.Name)
-                and rhs.func.value.id == "self"):
+        if (
+            isinstance(rhs, ast.Call)
+            and isinstance(rhs.func, ast.Attribute)
+            and isinstance(rhs.func.value, ast.Name)
+            and rhs.func.value.id == "self"
+        ):
             method_name = rhs.func.attr
             method_loc = _find_method_in_mro(mro, method_name)
             if method_loc is None:
@@ -889,9 +917,7 @@ class Extractor:
             return [rhs.func.id]
         return []
 
-    def _pattern_b(
-        self, kernel_file: Path, kernel_class_names: list[str]
-    ) -> list[EmitTarget]:
+    def _pattern_b(self, kernel_file: Path, kernel_class_names: list[str]) -> list[EmitTarget]:
         """Pattern B: discover from each kernel class, keep ``@tilelang.jit`` funcs.
 
         Handles both single-kernel ops (e.g. GatedDeltaNetFwdKernel) and
@@ -906,9 +932,11 @@ class Extractor:
         seen: set[tuple[Path, str]] = set()
         for key in self.discovered_order:
             node = self.discovered[key]
-            if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and _has_tilelang_jit(node)
-                    and key not in seen):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and _has_tilelang_jit(node)
+                and key not in seen
+            ):
                 seen.add(key)
                 targets.append(EmitTarget(key[0], node, "tl_kernel"))
         return targets
@@ -938,7 +966,8 @@ class Extractor:
             else:
                 self.warnings.append(
                     f"could not resolve internal import '{name}' in {file}; "
-                    "leaving reference unresolved")
+                    "leaving reference unresolved"
+                )
         # else: builtin / parameter / local — ignore silently.
 
     def _collect_constants(self, needed: set[str]) -> list[tuple[Path, str]]:
@@ -963,9 +992,7 @@ class Extractor:
                 changed = True
         return const_keys
 
-    def _collect_imports(
-        self, needed: set[str]
-    ) -> tuple[list[str], list[tuple[Path, str]]]:
+    def _collect_imports(self, needed: set[str]) -> tuple[list[str], list[tuple[Path, str]]]:
         """Return (ordered import texts, source keys) for external imports
         whose bound name is in *needed*."""
         texts: list[str] = []
@@ -1005,7 +1032,8 @@ class Extractor:
             lines = st.source.splitlines()
             seg = "\n".join(lines[node.lineno - 1 : node.end_lineno])
             seg_lines = [
-                ln for ln in seg.splitlines()
+                ln
+                for ln in seg.splitlines()
                 if not ln.lstrip().startswith(("@staticmethod", "@classmethod"))
             ]
             return textwrap.dedent("\n".join(seg_lines))
@@ -1021,8 +1049,7 @@ class Extractor:
         op_targets = [t for t in targets if t.kind == "op_func"]
         # Use the merged function name when merged_ast is set.
         tl_names = [
-            (t.merged_ast.name if t.merged_ast is not None else t.node.name)
-            for t in tl_targets
+            (t.merged_ast.name if t.merged_ast is not None else t.node.name) for t in tl_targets
         ]
         op_names = [t.node.name for t in op_targets]
         parts: list[str] = [self._header(tl_names, op_names), ""]
@@ -1052,10 +1079,11 @@ class Extractor:
         return "\n".join(parts) + "\n"
 
     def _header(self, tl_names: list[str], op_names: list[str]) -> str:
-        desc = (f"TileLang kernels: {', '.join(tl_names)}" if tl_names else "")
+        desc = f"TileLang kernels: {', '.join(tl_names)}" if tl_names else ""
         if op_names:
-            desc += (f" | op_func: {', '.join(op_names)}" if desc
-                     else f"op_func: {', '.join(op_names)}")
+            desc += (
+                f" | op_func: {', '.join(op_names)}" if desc else f"op_func: {', '.join(op_names)}"
+            )
         return (
             '"""Extracted TileLang kernel implementation.\n\n'
             f"{desc}\n"
@@ -1067,14 +1095,13 @@ class Extractor:
     # -- reporting helpers ------------------------------------------------ #
 
     def contributing_files(self) -> list[str]:
-        return sorted({
-            str(p.relative_to(self.repo_root)) for p in self.loader._cache
-        })
+        return sorted({str(p.relative_to(self.repo_root)) for p in self.loader._cache})
 
 
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+
 
 def _slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]+", "_", name)
@@ -1082,15 +1109,21 @@ def _slug(name: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Extract a self-contained TileLang kernel for a TileOPs op.")
+        description="Extract a self-contained TileLang kernel for a TileOPs op."
+    )
     parser.add_argument("--op-name", required=True, help="Manifest op key (e.g. MishFwdOp).")
-    parser.add_argument("--gpu-repo-root", required=True, type=Path,
-                        help="Path to the TileOPs repo root.")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="Output .py path, or a directory to write into "
-                             "(default: extracted_<OpName>.py in cwd). "
-                             "When a directory is given, the filename is "
-                             "auto-generated as _<op_slug>_kernels.py.")
+    parser.add_argument(
+        "--gpu-repo-root", required=True, type=Path, help="Path to the TileOPs repo root."
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output .py path, or a directory to write into "
+        "(default: extracted_<OpName>.py in cwd). "
+        "When a directory is given, the filename is "
+        "auto-generated as _<op_slug>_kernels.py.",
+    )
     args = parser.parse_args(argv)
 
     repo_root = args.gpu_repo_root.resolve()
@@ -1126,10 +1159,13 @@ def main(argv: list[str] | None = None) -> int:
     contributing = extractor.contributing_files()
     tl_count = sum(1 for t in extractor.targets if t.kind == "tl_kernel")
     op_count = sum(1 for t in extractor.targets if t.kind == "op_func")
-    print(f"[ok] kernel class(es): {', '.join(target_names)} "
-          f"(resolution pattern {extractor.pattern})")
-    print(f"[ok] extracted {tl_count} TileLang kernel function(s) "
-          f"+ {op_count} op_func(s) from {len(contributing)} source file(s):")
+    print(
+        f"[ok] kernel class(es): {', '.join(target_names)} (resolution pattern {extractor.pattern})"
+    )
+    print(
+        f"[ok] extracted {tl_count} TileLang kernel function(s) "
+        f"+ {op_count} op_func(s) from {len(contributing)} source file(s):"
+    )
     for f in contributing:
         print(f"       - {f}")
     print(f"[ok] wrote {out_path}")

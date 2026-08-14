@@ -309,7 +309,7 @@ def bench_kernel_msprof(
     warm_up: Optional[int] = None,
     output_dir: Optional[str] = None,
     keep_output: bool = False,
-) -> float:
+) -> tuple[float, str]:
     """Benchmark a kernel using ``msprof op``.
 
     Generates a standalone Python script that reconstructs *functor* and
@@ -332,7 +332,12 @@ def bench_kernel_msprof(
             parsing (copied to ``./msprof_output`` if *output_dir* is temp).
 
     Returns:
-        Median kernel latency in **milliseconds**.
+        ``(latency_ms, prof_output_dir)`` where *latency_ms* is the median
+        kernel latency in milliseconds and *prof_output_dir* is the path
+        to the msprof output directory (containing ``OPPROF_*`` subdirs).
+        On success the temp workspace is kept so the caller can parse
+        ``visualize_data.bin``; the caller is responsible for cleanup via
+        :func:`_cleanup_msprof_output`.
 
     Raises:
         RuntimeError: If ``msprof`` is not found or the profiling fails.
@@ -385,6 +390,7 @@ def bench_kernel_msprof(
 
     # --- Create temp workspace --------------------------------------------
     tmp_dir = tempfile.mkdtemp(prefix="tileops_msprof_")
+    _success = False
     try:
         inputs_path = os.path.join(tmp_dir, "inputs.pt")
         script_path = os.path.join(tmp_dir, "prof_script.py")
@@ -460,8 +466,8 @@ def bench_kernel_msprof(
             cmd.append(f"--warm-up={warm_up}")
             # These two lines below avoid excessive profiling time caused by parsing
             # too much data; here we only care about latency, not the detailed specifics.
-            cmd.append(f"--aic-metrics=TimelineDetail")
-            cmd.append(f"--dump=off")
+            cmd.append("--aic-metrics=Roofline")
+            cmd.append("--dump=off")
             cmd.extend([sys.executable, script_path])
 
             _logger.info("msprof command: %s", " ".join(cmd))
@@ -534,11 +540,17 @@ def bench_kernel_msprof(
             except Exception as e:
                 _logger.warning("Failed to copy msprof output: %s", e)
 
-        return latency_ms
+        _success = True
+        return latency_ms, prof_output_dir
 
     finally:
         should_keep = keep_output or os.environ.get("TILEOPS_MSPROF_KEEP_OUTPUT") == "1"
-        if not should_keep:
+        if not should_keep and not _success:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+        elif not should_keep:
+            _logger.debug(
+                "msprof temp files kept at %s for roofline parsing (caller cleanup)",
+                tmp_dir,
+            )
         else:
             _logger.info("msprof temp files kept at %s", tmp_dir)

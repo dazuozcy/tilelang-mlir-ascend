@@ -41,22 +41,10 @@ from tileops.kernels.reduction._primitives import (
     device_smem_budget,
 )
 
-from . import _log_sum_exp_fwd_kernels as _extracted_mod
-# from ._log_sum_exp_fwd_kernels import (
-#     _logsumexp_kernel_single,
-#     _logsumexp_kernel_tiled,
-# )
-
 from ._logsumexp_kernel_single._logsumexp_kernel_single import _logsumexp_kernel_single
 from ._logsumexp_kernel_tiled._logsumexp_kernel_tiled import _logsumexp_kernel_tiled
 
 __all__ = ["LogSumExpKernel"]
-
-# Make align_up available to the extracted module's namespace so the GPU
-# reference functions can resolve it at runtime.  The extraction script
-# emits @tilelang.jit functions and module-level constants but not helper
-# functions like align_up.
-_extracted_mod.align_up = align_up
 
 
 # ---------------------------------------------------------------------------

@@ -40,8 +40,7 @@ def load_manifest() -> dict[str, Any]:
         for name, entry in ops.items():
             if name in merged:
                 raise ValueError(
-                    f"duplicate op {name!r} in {path.name} "
-                    f"(already defined in {origin[name]})"
+                    f"duplicate op {name!r} in {path.name} (already defined in {origin[name]})"
                 )
             merged[name] = entry
             origin[name] = path.name
@@ -74,7 +73,8 @@ def single_input_workload_contract(
     params = sig.get("params")
     param_names = (
         frozenset(k for k in params if isinstance(k, str))
-        if isinstance(params, dict) else frozenset()
+        if isinstance(params, dict)
+        else frozenset()
     )
     allowed = param_names | WORKLOAD_RESERVED_KEYS | {shape_key}
     return shape_key, allowed

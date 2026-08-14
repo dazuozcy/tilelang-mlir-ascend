@@ -68,12 +68,15 @@ class Op(ABC):
                 kernel_type = candidate_map[name]
             else:
                 kernel_type = default_kernel
-            if kernel_type is not None and kernel_type.supported_archs is not None:
-                if not _arch_supported(kernel_type.supported_archs, backend):
-                    raise ValueError(
-                        f"{kernel_type.__name__} is not supported on backend "
-                        f"{backend.name} (supported: {kernel_type.supported_archs})"
-                    )
+            if (
+                kernel_type is not None
+                and kernel_type.supported_archs is not None
+                and not _arch_supported(kernel_type.supported_archs, backend)
+            ):
+                raise ValueError(
+                    f"{kernel_type.__name__} is not supported on backend "
+                    f"{backend.name} (supported: {kernel_type.supported_archs})"
+                )
             resolved[name] = kernel_type
         self.kernel_map = resolved
 
@@ -124,7 +127,4 @@ def _arch_supported(supported: list[str], backend: object) -> bool:
     if supported is None:
         return True
     device_name = backend.get_device_name(0) if backend.is_available() else ""
-    for arch in supported:
-        if arch in device_name:
-            return True
-    return False
+    return any(arch in device_name for arch in supported)

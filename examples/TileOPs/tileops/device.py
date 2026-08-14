@@ -25,12 +25,12 @@ from typing import Optional
 import torch
 
 __all__ = [
+    "DEFAULT_DEVICE",
+    "CPUBackend",
+    "CUDABackend",
     "DeviceBackend",
     "NPUBackend",
-    "CUDABackend",
-    "CPUBackend",
     "get_device_backend",
-    "DEFAULT_DEVICE",
 ]
 
 
@@ -44,44 +44,34 @@ class DeviceBackend(ABC):
     name: str = "abstract"
 
     @abstractmethod
-    def is_available(self) -> bool:
-        ...
+    def is_available(self) -> bool: ...
 
     @abstractmethod
-    def device_count(self) -> int:
-        ...
+    def device_count(self) -> int: ...
 
     @abstractmethod
-    def current_device(self) -> int:
-        ...
+    def current_device(self) -> int: ...
 
     @abstractmethod
-    def synchronize(self, device: Optional[int] = None) -> None:
-        ...
+    def synchronize(self, device: Optional[int] = None) -> None: ...
 
     @abstractmethod
-    def empty_cache(self) -> None:
-        ...
+    def empty_cache(self) -> None: ...
 
     @abstractmethod
-    def get_device_name(self, device: Optional[int] = None) -> str:
-        ...
+    def get_device_name(self, device: Optional[int] = None) -> str: ...
 
     @abstractmethod
-    def get_device_properties(self, device: Optional[int] = None) -> object:
-        ...
+    def get_device_properties(self, device: Optional[int] = None) -> object: ...
 
     @abstractmethod
-    def is_device_tensor(self, tensor: torch.Tensor) -> bool:
-        ...
+    def is_device_tensor(self, tensor: torch.Tensor) -> bool: ...
 
     @abstractmethod
-    def Event(self, enable_timing: bool = False) -> object:
-        ...
+    def Event(self, enable_timing: bool = False) -> object: ...
 
     @abstractmethod
-    def manual_seed_all(self, seed: int) -> None:
-        ...
+    def manual_seed_all(self, seed: int) -> None: ...
 
     @abstractmethod
     def env_metadata(self) -> list[str]:
@@ -146,6 +136,7 @@ class NPUBackend(DeviceBackend):
         ]
         try:
             import torch_npu
+
             lines.append(f"- **torch_npu version**: {torch_npu.__version__}")
         except ImportError:
             lines.append("- **torch_npu version**: N/A")
@@ -285,6 +276,7 @@ class CPUBackend(DeviceBackend):
         class _CPUProps:
             name = "CPU"
             total_memory = 0
+
         return _CPUProps()
 
     def is_device_tensor(self, tensor: torch.Tensor) -> bool:
@@ -294,10 +286,10 @@ class CPUBackend(DeviceBackend):
         class _CPUEvent:
             def record(self) -> None:
                 import time
+
                 self._t = time.time()
 
             def elapsed_time(self, other: "_CPUEvent") -> float:
-                import time
                 return (other._t - self._t) * 1000.0
 
         return _CPUEvent()

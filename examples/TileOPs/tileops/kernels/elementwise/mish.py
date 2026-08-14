@@ -95,12 +95,10 @@ def _mish_kernel(N, dtype, output_dtype=None, num_inner=4, num_stages=2):
                     for i in T.Pipelined(num_inner, num_stages=num_stages):
                         offset = cid * block_size + i * inner_tile
                         # Safe tail: T.max(0, ...) for out-of-bounds inner tiles
-                        inner_tail = T.max(
-                            0, T.min(inner_tile, N - offset))
+                        inner_tail = T.max(0, T.min(inner_tile, N - offset))
 
                         # GM -> UB (copy only valid elements)
-                        T.copy(x[offset : offset + inner_tail],
-                               xy_ub[0:inner_tail])
+                        T.copy(x[offset : offset + inner_tail], xy_ub[0:inner_tail])
 
                         # Upcast to float32 for numerical stability
                         T.vcast(xy_ub, x_f32, round_mode="rint")
@@ -109,20 +107,19 @@ def _mish_kernel(N, dtype, output_dtype=None, num_inner=4, num_stages=2):
                         # tanh(softplus(x)) = (t2²-1)/(t2²+1), t2 = 1+exp(x)
                         # avoids T.vtanh (Taylor divergence on 1-D UB, see
                         # Stage 3 DESIGN.md §3.3 fallback note).
-                        T.vexp(x_f32, work_a)             # work_a = exp(x)
-                        T.vadd(work_a, 1.0, work_a)       # work_a = 1 + exp(x) = t2
-                        T.vmul(work_a, work_a, work_a)    # work_a = t2² (in-place)
-                        T.vsub(work_a, 1.0, work_b)       # work_b = t2² - 1 = num
-                        T.vadd(work_a, 1.0, work_a)       # work_a = t2² + 1 = den
-                        T.vdiv(work_b, work_a, work_b)    # work_b = num/den
-                        T.vmul(x_f32, work_b, x_f32)      # x_f32 = x * tanh(sp) (in-place)
+                        T.vexp(x_f32, work_a)  # work_a = exp(x)
+                        T.vadd(work_a, 1.0, work_a)  # work_a = 1 + exp(x) = t2
+                        T.vmul(work_a, work_a, work_a)  # work_a = t2² (in-place)
+                        T.vsub(work_a, 1.0, work_b)  # work_b = t2² - 1 = num
+                        T.vadd(work_a, 1.0, work_a)  # work_a = t2² + 1 = den
+                        T.vdiv(work_b, work_a, work_b)  # work_b = num/den
+                        T.vmul(x_f32, work_b, x_f32)  # x_f32 = x * tanh(sp) (in-place)
 
                         # Downcast back to original dtype
                         T.vcast(x_f32, xy_ub, round_mode="round")
 
                         # UB -> GM (copy only valid elements)
-                        T.copy(xy_ub[0:inner_tail],
-                               y[offset : offset + inner_tail])
+                        T.copy(xy_ub[0:inner_tail], y[offset : offset + inner_tail])
                 else:
                     # --- float32 path: 3 UB buffers at inner_tile ---
                     # xy_ub: input load -> final vmul result (in-place dst=src1)
@@ -134,29 +131,27 @@ def _mish_kernel(N, dtype, output_dtype=None, num_inner=4, num_stages=2):
 
                     for i in T.Pipelined(num_inner, num_stages=num_stages):
                         offset = cid * block_size + i * inner_tile
-                        inner_tail = T.max(
-                            0, T.min(inner_tile, N - offset))
+                        inner_tail = T.max(0, T.min(inner_tile, N - offset))
 
                         # GM -> UB
-                        T.copy(x[offset : offset + inner_tail],
-                               xy_ub[0:inner_tail])
+                        T.copy(x[offset : offset + inner_tail], xy_ub[0:inner_tail])
 
                         # Core mish (algebraic identity, in-place ops)
-                        T.vexp(xy_ub, work_a)             # work_a = exp(x)
-                        T.vadd(work_a, 1.0, work_a)       # work_a = 1 + exp(x) = t2
-                        T.vmul(work_a, work_a, work_a)    # work_a = t2² (in-place)
-                        T.vsub(work_a, 1.0, work_b)       # work_b = t2² - 1 = num
-                        T.vadd(work_a, 1.0, work_a)       # work_a = t2² + 1 = den
-                        T.vdiv(work_b, work_a, work_b)    # work_b = num/den
-                        T.vmul(xy_ub, work_b, xy_ub)      # xy_ub = x * tanh(sp) (in-place)
+                        T.vexp(xy_ub, work_a)  # work_a = exp(x)
+                        T.vadd(work_a, 1.0, work_a)  # work_a = 1 + exp(x) = t2
+                        T.vmul(work_a, work_a, work_a)  # work_a = t2² (in-place)
+                        T.vsub(work_a, 1.0, work_b)  # work_b = t2² - 1 = num
+                        T.vadd(work_a, 1.0, work_a)  # work_a = t2² + 1 = den
+                        T.vdiv(work_b, work_a, work_b)  # work_b = num/den
+                        T.vmul(xy_ub, work_b, xy_ub)  # xy_ub = x * tanh(sp) (in-place)
 
                         # UB -> GM
-                        T.copy(xy_ub[0:inner_tail],
-                               y[offset : offset + inner_tail])
+                        T.copy(xy_ub[0:inner_tail], y[offset : offset + inner_tail])
 
         return main
 
     return kernel
+
 
 # ---------------------------------------------------------------------------
 # custom_op wrapper for torch.compile compatibility
@@ -184,7 +179,7 @@ def _(N: int, dtype_str: str, block_size: int, x: torch.Tensor) -> torch.Tensor:
 
 # Default block_size values — the GPU ``threads * npt`` product (K11).
 # GPU default: threads=256, npt=4 (fp32) / npt=8 (fp16/bf16, register_copy).
-_BLOCK_SIZE_FP32 = 1024       # 256 * 4
+_BLOCK_SIZE_FP32 = 1024  # 256 * 4
 _BLOCK_SIZE_NON_FP32 = 2048  # 256 * 8
 
 

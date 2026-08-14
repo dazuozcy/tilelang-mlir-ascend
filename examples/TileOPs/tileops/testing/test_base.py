@@ -53,6 +53,7 @@ def exact_compare(output: torch.Tensor, output_ref: torch.Tensor) -> None:
 
 class _CheckResult:
     """Thread-local container for conftest hook to pick up test metadata."""
+
     op_name: str | None = None
     op_module: str | None = None
     max_abs_err: float | None = None
@@ -129,5 +130,7 @@ class TestBase(WorkloadBase):
 
         _logger.info(
             "op=%s module=%s status=pass max_abs_err=%.2e",
-            op_name, op_module, max_abs_err,
+            op_name,
+            op_module,
+            max_abs_err,
         )

@@ -44,7 +44,9 @@ class MishFixture(FixtureBase):
         (
             "n_total, dtype",
             [
-                pytest.param(1_048_576, torch.float32, marks=[pytest.mark.smoke, pytest.mark.packaging]),
+                pytest.param(
+                    1_048_576, torch.float32, marks=[pytest.mark.smoke, pytest.mark.packaging]
+                ),
                 pytest.param(1_048_576, torch.float16, marks=[pytest.mark.smoke]),
                 pytest.param(1_048_576, torch.bfloat16, marks=[pytest.mark.smoke]),
                 # Full: larger follow-up coverage

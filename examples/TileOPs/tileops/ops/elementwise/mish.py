@@ -96,17 +96,11 @@ class MishFwdOp(Op):
         """
         backend = get_device_backend()
         if not backend.is_device_tensor(x):
-            raise ValueError(
-                f"input must be a {backend.name} tensor, got device {x.device}"
-            )
+            raise ValueError(f"input must be a {backend.name} tensor, got device {x.device}")
         if x.dtype != self.dtype:
-            raise ValueError(
-                f"Expected input.dtype {self.dtype}, got {x.dtype}"
-            )
+            raise ValueError(f"Expected input.dtype {self.dtype}, got {x.dtype}")
         if x.numel() != self.N_total:
-            raise ValueError(
-                f"Expected {self.N_total} elements, got {x.numel()}"
-            )
+            raise ValueError(f"Expected {self.N_total} elements, got {x.numel()}")
 
     def _eager_forward(self, input: torch.Tensor) -> torch.Tensor:
         """Direct kernel call for use inside forward."""

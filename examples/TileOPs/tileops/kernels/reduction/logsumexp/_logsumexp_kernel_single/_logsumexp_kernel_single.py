@@ -21,12 +21,10 @@ os.environ.setdefault("TILELANG_ASCEND_MODE", "Developer")
 
 import argparse
 
-import torch
-import torch_npu  # noqa: F401  (registers the "npu" device)
-
 import tilelang
 import tilelang.language as T
-
+import torch
+import torch_npu  # noqa: F401  (registers the "npu" device)
 
 # ---------- dtype / tolerance mapping ----------
 # Tolerances from examples/TileOPs/tests/ops/test_softmax.py _get_tolerances().
@@ -132,8 +130,7 @@ def _run_case(M, N, dtype_str, block_m, tag):
     torch.testing.assert_close(y.cpu(), ref, rtol=rtol, atol=atol)
     max_diff = (y.cpu().float() - ref.float()).abs().max().item()
     print(
-        f"[{tag}] PASS: shape=({M},{N}) dtype={dtype_str} "
-        f"block_m={block_m} max_diff={max_diff:.2e}"
+        f"[{tag}] PASS: shape=({M},{N}) dtype={dtype_str} block_m={block_m} max_diff={max_diff:.2e}"
     )
     return max_diff
 
@@ -142,16 +139,16 @@ def _run_case(M, N, dtype_str, block_m, tag):
 # 10 cases from DESIGN.md section 8.3.
 def run_L0():
     cases = [
-        (32, 256, "float16", 8),     # L0-1 basic fp16
-        (32, 256, "float32", 8),     # L0-2 fp32 no cast loss
-        (32, 256, "bfloat16", 8),    # L0-3 bf16 -> fp32 -> bf16
-        (33, 256, "float16", 8),     # L0-4 row-tail (33 % 8 = 1)
-        (32, 300, "float16", 4),     # L0-5 N unaligned (300 not 256x)
-        (4, 4096, "float16", 4),     # L0-6 manifest attn-weights-4k
-        (4, 4096, "bfloat16", 4),    # L0-7 manifest bf16
+        (32, 256, "float16", 8),  # L0-1 basic fp16
+        (32, 256, "float32", 8),  # L0-2 fp32 no cast loss
+        (32, 256, "bfloat16", 8),  # L0-3 bf16 -> fp32 -> bf16
+        (33, 256, "float16", 8),  # L0-4 row-tail (33 % 8 = 1)
+        (32, 300, "float16", 4),  # L0-5 N unaligned (300 not 256x)
+        (4, 4096, "float16", 4),  # L0-6 manifest attn-weights-4k
+        (4, 4096, "bfloat16", 4),  # L0-7 manifest bf16
         (1024, 4096, "float16", 4),  # L0-8 large M (bm=4: fragment+UB fit 192KB)
-        (1, 256, "float16", 1),      # L0-9 single row
-        (256, 32, "float16", 4),     # L0-10 dim=0 reduction (op-layer reshape)
+        (1, 256, "float16", 1),  # L0-9 single row
+        (256, 32, "float16", 4),  # L0-10 dim=0 reduction (op-layer reshape)
     ]
     max_diff = 0.0
     for M, N, dtype_str, block_m in cases:
@@ -163,12 +160,12 @@ def run_L0():
 def run_L1():
     cases = [
         (128, 512, "float32", 16),
-        (130, 256, "float16", 8),    # row-tail 130 % 8 = 2
+        (130, 256, "float16", 8),  # row-tail 130 % 8 = 2
         (64, 1024, "bfloat16", 4),
-        (8, 512, "float16", 8),      # exact divide
-        (17, 128, "float16", 16),    # row-tail 17 % 16 = 1
+        (8, 512, "float16", 8),  # exact divide
+        (17, 128, "float16", 16),  # row-tail 17 % 16 = 1
         (256, 1024, "float32", 8),
-        (3, 300, "bfloat16", 2),     # small M + unaligned N
+        (3, 300, "bfloat16", 2),  # small M + unaligned N
     ]
     max_diff = 0.0
     for M, N, dtype_str, block_m in cases:
@@ -179,10 +176,10 @@ def run_L1():
 # ---------- L2: boundary (warn only, non-blocking) ----------
 def run_L2():
     cases = [
-        (1, 1, "float16", 1),        # minimal
-        (8, 256, "float16", 8),      # exact divide M=block_m
-        (9, 256, "float16", 8),      # M=block_m+1
-        (32, 1, "float16", 4),       # N=1 single-element reduce
+        (1, 1, "float16", 1),  # minimal
+        (8, 256, "float16", 8),  # exact divide M=block_m
+        (9, 256, "float16", 8),  # M=block_m+1
+        (32, 1, "float16", 4),  # N=1 single-element reduce
     ]
     for M, N, dtype_str, block_m in cases:
         try:
