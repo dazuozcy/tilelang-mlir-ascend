@@ -21,7 +21,7 @@ import torch
 
 from tileops.device import get_device_backend
 from tileops.kernels.kernel_base import Kernel
-from tileops.kernels.reduction.logsumexp import LogSumExpKernel
+from tileops.kernels.reduction.logsumexp.logsumexp import LogSumExpKernel
 from tileops.ops._multidim import (
     EmptyDimPolicy,
     flatten_for_multidim,

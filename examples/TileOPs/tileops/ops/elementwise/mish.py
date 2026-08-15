@@ -1,15 +1,13 @@
-"""Mish operator (spec-conformant interface).
+"""MishFwdOp -- elementwise Mish activation (NPU-adapted).
 
 Adaptation from GPU (TileOPs) to NPU:
 
-- ``_validate``: ``x.is_cuda`` → ``backend.is_device_tensor(x)`` (O1).
-- Kernel dispatch: ``MishFwdKernel`` is the NPU TileLang kernel (factory
-  stubbed until the NPU kernel component fills it in).
-- ``tune`` parameter removed (O3); kernel constructor takes
-  ``(N_total, dtype, config=None, device_index=None)``.
-- ``eval_roofline``: identical arithmetic (roofline is device-agnostic).
-- ``_OP_REGISTRY`` / ``_wrapped`` custom_op at the Op layer removed (O5) —
-  ``forward`` calls ``_eager_forward`` directly.
+- O1: ``input.is_cuda`` -> ``backend.is_device_tensor(input)``.
+- O3: ``tune`` parameter removed; kernel constructor takes
+      ``(N_total, dtype, config=None)``.
+- O4: ``from tileops.device import get_device_backend``.
+- O5: ``from .compile_boundary import register_instance`` removed.
+- O6: Op-specific flow (flatten -> kernel -> reshape, roofline) preserved.
 """
 
 from __future__ import annotations
@@ -27,27 +25,23 @@ __all__ = ["MishFwdOp"]
 
 
 class MishFwdOp(Op):
-    """Element-wise Mish: ``y = x * tanh(softplus(x))``.
+    """Element-wise Mish: y = x * tanh(softplus(x)).
 
-    The input is flattened to a 1-D ``(N_total,)`` vector, the kernel is
-    dispatched on the flat vector, and the output is reshaped back to the
-    original input shape.
+    Single-input, single-output unary activation.  The input is
+    flattened to a 1-D vector of ``N_total`` elements, the kernel is
+    dispatched, and the output is reshaped back to the original shape.
 
     Args:
-        N_total: Total number of elements (flattened).
+        N_total: Total number of elements (flattened input).
         dtype: Data type (float16, bfloat16, or float32).
-        inplace: When True, copy the result back into ``input`` and return
-            ``input`` (preserving tensor identity).  The kernel still
-            computes into a fresh buffer; only the user-visible tensor is
-            mutated, mirroring ``torch.nn.functional.mish``.
+        inplace: When True, copy the result back into ``input`` and
+            return ``input`` (preserving tensor identity).
         kernel_map: Optional kernel dispatch override.
     """
 
     _op_name = "mish"
-    _kernel_key = "mish"
-    _kernel_class = MishFwdKernel
-    # Manifest: flops = "4 * N". Per roofline.md §1.3:
-    # mish(x) = x * tanh(softplus(x));
+    kernel_cls = MishFwdKernel
+    # Manifest: flops = "4 * N".  mish(x) = x * tanh(softplus(x));
     # softplus = exp + log1p = 2; tanh(transcendental) + final mul = 4 per elem.
     FLOPS_PER_ELEM = 4
 
@@ -64,13 +58,43 @@ class MishFwdOp(Op):
         self.inplace = inplace
         self.output_dtype = dtype  # same_as(input)
         self.dispatch_kernel(kernel_map)
-        # Kernel construction will raise NotImplementedError until the NPU
-        # kernel component fills in the factory stub.
-        self.kernel = self.kernel_map[self._kernel_key](N_total, dtype)
+        self.kernel = self.kernel_map[self._op_name](N_total, dtype)
 
     @property
     def default_kernel_map(self) -> Dict[str, Kernel]:
-        return {self._kernel_key: self._kernel_class}
+        return {self._op_name: self.kernel_cls}
+
+    def _validate_input(self, input: torch.Tensor) -> None:
+        """Validate input tensor.
+
+        NPU adaptation (O1): device check uses ``backend.is_device_tensor``
+        instead of ``input.is_cuda``.
+        """
+        backend = get_device_backend()
+        if not backend.is_device_tensor(input):
+            raise ValueError(
+                f"input must be a {backend.name} tensor, got device {input.device}"
+            )
+        if input.dtype != self.dtype:
+            raise ValueError(f"Expected input.dtype {self.dtype}, got {input.dtype}")
+        if input.numel() != self.N_total:
+            raise ValueError(
+                f"Expected {self.N_total} elements, got {input.numel()}"
+            )
+
+    def _eager_forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Direct kernel call: flatten -> kernel -> reshape."""
+        orig_shape = input.shape
+        flat = input.contiguous().reshape(-1)
+        return self.kernel(flat).reshape(orig_shape)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        self._validate_input(input)
+        if self.inplace:
+            result = self._eager_forward(input)
+            input.copy_(result.reshape(input.shape))
+            return input
+        return self._eager_forward(input)
 
     @property
     def total_memory(self) -> float:
@@ -82,36 +106,6 @@ class MishFwdOp(Op):
 
         Mirrors the manifest roofline:
         ``flops = FLOPS_PER_ELEM * N`` and
-        ``bytes = N * input_elem_bytes + N * output_elem_bytes``.
-        For Mish, output dtype == input dtype, so bytes collapse to
-        ``2 * N * elem_bytes``.
+        ``bytes = 2 * N * elem_bytes``.
         """
         return self.FLOPS_PER_ELEM * self.N_total, int(self.total_memory)
-
-    def _validate(self, x: torch.Tensor) -> None:
-        """Validate input tensor against the op's dtype / numel contract.
-
-        NPU adaptation: device check uses ``backend.is_device_tensor(x)``
-        instead of ``x.is_cuda`` (O1).
-        """
-        backend = get_device_backend()
-        if not backend.is_device_tensor(x):
-            raise ValueError(f"input must be a {backend.name} tensor, got device {x.device}")
-        if x.dtype != self.dtype:
-            raise ValueError(f"Expected input.dtype {self.dtype}, got {x.dtype}")
-        if x.numel() != self.N_total:
-            raise ValueError(f"Expected {self.N_total} elements, got {x.numel()}")
-
-    def _eager_forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Direct kernel call for use inside forward."""
-        orig_shape = input.shape
-        flat = input.contiguous().reshape(-1)
-        return self.kernel(flat).reshape(orig_shape)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        self._validate(input)
-        if self.inplace:
-            result = self._eager_forward(input)
-            input.copy_(result.reshape(input.shape))
-            return input
-        return self._eager_forward(input)

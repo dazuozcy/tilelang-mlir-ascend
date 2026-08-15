@@ -240,7 +240,7 @@ class LogSumExpKernel(Kernel):
                 continue
             if tn == 0:
                 # Single-tile is always better: prefer larger block_m
-                best_bm = bm
+                best_bm = min(bm, self.M)
                 best_tile_n = tn
             elif best_tile_n == 0:
                 pass
@@ -248,7 +248,7 @@ class LogSumExpKernel(Kernel):
                 best_num = (self.N_padded + best_tile_n - 1) // best_tile_n
                 curr_num = (self.N_padded + tn - 1) // tn
                 if curr_num < best_num:
-                    best_bm = bm
+                    best_bm = min(bm, self.M)
                     best_tile_n = tn
 
         return {"block_m": best_bm, "tile_n": best_tile_n}
