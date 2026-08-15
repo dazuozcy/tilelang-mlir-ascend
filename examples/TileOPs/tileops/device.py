@@ -91,6 +91,16 @@ class DeviceBackend(ABC):
         """Whether ``torch.profiler`` CUPTI-style kernel tracing is available."""
         return False
 
+    def shared_memory_budget(self, device: Optional[int] = None) -> int:
+        """Return the on-chip memory budget in bytes for tile sizing.
+
+        Subclasses should override to return the actual device-specific
+        budget: CUDA shared memory, NPU Unified Buffer (UB), etc.  The
+        default returns a conservative 48 KiB which is safe for all
+        backends.
+        """
+        return 48 * 1024
+
 
 class NPUBackend(DeviceBackend):
     """Ascend NPU backend via ``torch_npu``."""
@@ -129,6 +139,32 @@ class NPUBackend(DeviceBackend):
 
     def manual_seed_all(self, seed: int) -> None:
         torch.npu.manual_seed_all(seed)
+
+    def shared_memory_budget(self, device: Optional[int] = None) -> int:
+        """Return the actual Unified Buffer (UB) capacity in bytes.
+
+        Queries the Ascend chip model at runtime via
+        :class:`tilelang.utils.npu_arch.AscendArch` and returns the
+        real UB capacity (e.g. 192 KiB for Ascend910B, 256 KiB for
+        Ascend910A, 248 KiB for Ascend950).  Falls back to 48 KiB when
+        the chip model cannot be detected (e.g. on a non-Ascend
+        machine or when ``torch_npu`` is unavailable).
+
+        The *device* argument is accepted for API parity with
+        :meth:`DeviceBackend.shared_memory_budget` but is not used:
+        UB capacity is a per-chip-model constant, not a per-device
+        property, so the current device's chip model is always used.
+        """
+        try:
+            from tilelang.utils.npu_arch import get_arch_obj
+
+            arch = get_arch_obj()
+            ub_cap = int(arch.ub_cap)
+            if ub_cap > 0:
+                return ub_cap
+        except Exception:
+            pass
+        return 48 * 1024
 
     def env_metadata(self) -> list[str]:
         lines = [
@@ -222,6 +258,37 @@ class CUDABackend(DeviceBackend):
 
     def manual_seed_all(self, seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
+
+    def shared_memory_budget(self, device: Optional[int] = None) -> int:
+        """Return the actual opt-in shared memory budget in bytes.
+
+        Queries ``torch.cuda.get_device_properties`` for the real
+        ``shared_memory_per_block_optin`` (falling back to
+        ``shared_memory_per_block``).  When *device* is explicitly
+        requested but CUDA is unavailable, a ``RuntimeError`` is raised
+        rather than silently returning the default.
+        """
+        explicit = device is not None
+        try:
+            if not torch.cuda.is_available():
+                if explicit:
+                    raise RuntimeError(
+                        f"CUDA is not available but explicit device={device} was requested"
+                    )
+                return 48 * 1024
+
+            if device is None:
+                device = torch.cuda.current_device()
+
+            props = torch.cuda.get_device_properties(device)
+            smem_optin = getattr(props, "shared_memory_per_block_optin", 0)
+            if smem_optin > 0:
+                return smem_optin
+            return getattr(props, "shared_memory_per_block", 48 * 1024)
+        except (RuntimeError, AssertionError):
+            if explicit:
+                raise
+            return 48 * 1024
 
     def supports_profiler(self) -> bool:
         return True

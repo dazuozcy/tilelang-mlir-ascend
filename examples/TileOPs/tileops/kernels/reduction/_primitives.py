@@ -4,17 +4,16 @@ Provides reusable utility functions, constants, and T.macro factories
 used across all reduction sub-category kernels (sum, max, softmax,
 variance, prefix-scan, etc.).
 
-NPU adaptation (K6): ``device_smem_budget`` uses the device backend
-abstraction (:func:`get_device_backend`) instead of calling
-``torch.cuda.get_device_properties()`` directly.  For CUDA devices the
-actual opt-in shared memory budget is queried; for NPU devices the
-default budget is returned (NPU uses Unified Buffer, not CUDA-style
-shared memory).  ``tune_by_forward`` is likewise adapted to use the
+NPU adaptation (K6): ``device_smem_budget`` delegates to
+:meth:`DeviceBackend.shared_memory_budget` via
+:func:`get_device_backend`.  For NPU devices the actual Unified Buffer
+(UB) capacity is queried through
+:class:`tilelang.utils.npu_arch.AscendArch` instead of returning a
+hardcoded default.  ``tune_by_forward`` is likewise adapted to use the
 backend abstraction for synchronization and timing.
 """
 
 import tilelang.language as T
-import torch
 
 from tileops.device import get_device_backend
 
@@ -51,44 +50,19 @@ SHARED_MEMORY_BUDGET_BYTES: int = 48 * 1024
 
 
 def device_smem_budget(device_index: int | None = None) -> int:
-    """Return the shared memory budget for the current device.
+    """Return the on-chip memory budget for the current device.
 
-    NPU adaptation (K6): uses :func:`get_device_backend` instead of
-    ``torch.cuda`` directly.  For CUDA devices, queries the actual
-    opt-in shared memory budget from device properties.  For NPU and
-    CPU devices, returns ``SHARED_MEMORY_BUDGET_BYTES`` (48 KiB) since
-    NPU uses Unified Buffer rather than CUDA-style shared memory.
-
-    On non-CUDA backends an explicit *device_index* is accepted but
-    ignored: NPU device indices are valid, but shared-memory budget is
-    a CUDA-specific concept and always falls back to the default.
+    NPU adaptation (K6): delegates to
+    :meth:`DeviceBackend.shared_memory_budget` via
+    :func:`get_device_backend`.  For NPU devices this queries the
+    actual Unified Buffer (UB) capacity through
+    :class:`tilelang.utils.npu_arch.AscendArch` (e.g. 192 KiB for
+    Ascend910B, 256 KiB for Ascend910A).  For CUDA devices the actual
+    opt-in shared memory budget is queried from device properties.
+    For CPU devices the conservative default (48 KiB) is returned.
     """
     backend = get_device_backend()
-
-    if backend.name != "cuda":
-        return SHARED_MEMORY_BUDGET_BYTES
-
-    explicit = device_index is not None
-    try:
-        if not torch.cuda.is_available():
-            if explicit:
-                raise RuntimeError(
-                    f"CUDA is not available but explicit device_index={device_index} was requested"
-                )
-            return SHARED_MEMORY_BUDGET_BYTES
-
-        if device_index is None:
-            device_index = torch.cuda.current_device()
-
-        props = torch.cuda.get_device_properties(device_index)
-        smem_optin = getattr(props, "shared_memory_per_block_optin", 0)
-        if smem_optin > 0:
-            return smem_optin
-        return getattr(props, "shared_memory_per_block", SHARED_MEMORY_BUDGET_BYTES)
-    except (RuntimeError, AssertionError):
-        if explicit:
-            raise
-        return SHARED_MEMORY_BUDGET_BYTES
+    return backend.shared_memory_budget(device_index)
 
 
 def align_up(n: int, alignment: int) -> int:
