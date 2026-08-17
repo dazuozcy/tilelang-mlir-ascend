@@ -436,25 +436,23 @@ def npuir_floordiv(A, B, C):
     return AscendBinaryOp("floordiv", A, B, C).buildTirCall()
 
 
-def npuir_exp2(A, B, Tmp):
-    """Compute exp2(A) = exp(A * ln(2)).
+def npuir_exp2(A, B):
+    """Compute exp2(A) = 2^A.
+
+    The hardware lacks a native vector exp2 instruction, so the op is
+    lowered in codegen to ``B = exp(A * ln(2))`` using a
+    compiler-managed temporary buffer. The temporary is analyzed and
+    allocated by the codegen from ``A``'s region, so it does not appear
+    in the user-facing API.
 
     Args:
         A (Union[tir.Buffer, tir.Var]): Input
         B (Union[tir.Buffer, tir.Var]): Output
-        Tmp (Union[tir.Buffer, tir.Var]): Temp buffer
 
     Returns:
-        tir.Stmt: The TIR statements for the exp2 operation
+        tir.Call: The TIR call for the exp2 operation
     """
-
-    ln2 = tir.const(math.log(2.0), A.dtype)
-    mul_call = AscendBinaryOp("mul", A, ln2, Tmp).buildTirCall()
-
-    exp_call = AscendUnaryOp("exp", Tmp, B).buildTirCall()
-
-    T.evaluate(mul_call)
-    T.evaluate(exp_call)
+    return AscendUnaryOp("exp2", A, B).buildTirCall()
 
 
 def npuir_log2(A, B, Tmp):

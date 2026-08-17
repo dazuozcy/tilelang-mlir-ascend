@@ -273,6 +273,7 @@ private:
   void VsinCodegen(const CallNode *op);
   void VerfCodegen(const CallNode *op);
   void VtanhCodegen(const CallNode *op);
+  void Vexp2Codegen(const CallNode *op);
   void VfloordivCodegen(const CallNode *op);
   void DebugPrintCodegen(const CallNode *op);
   void ReshapeCodegen(const CallNode *op);

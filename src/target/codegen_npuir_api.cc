@@ -2595,6 +2595,42 @@ void CodeGenTileLangNPUIRAPI::VtanhCodegen(const CallNode *op) {
   }
 }
 
+// Generate vector exp2 in codegen (Expert mode).
+//
+// before(TileLang/TIR semantic):
+//   B = tl.npuir_exp2(A)
+//   No native vector exp2 exists, so lower to B = exp(A * ln(2)) with a
+//   compiler-managed temporary buffer whose size is analyzed from src.
+//
+// after(MLIR Lowering):
+//   - materialize ln(2) scalar constant
+//   - allocate temporary buffer typed/shaped like src
+//   - compute A * ln(2) via hivm::VMul into the temporary
+//   - compute exp(tmp) via hivm::VExp into dst
+void CodeGenTileLangNPUIRAPI::Vexp2Codegen(const CallNode *op) {
+  tvm::tl::NpuirExp2 npuirop(op->args, this->vmap);
+  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
+  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
+  auto src_type = src.getType().cast<mlir::MemRefType>();
+  auto elem_type = src_type.getElementType();
+  mlir::Location loc = builder.getUnknownLoc();
+
+  // ln(2) constant: exp2(x) = exp(x * ln(2)).
+  Value ln2 = builder.create<mlir::arith::ConstantOp>(
+      loc, builder.getFloatAttr(elem_type, std::log(2.0)));
+
+  // Compiler-managed temporary buffer for A * ln(2), sized/typed like src.
+  Value tmp = mlir::utils::createTmpBufferOrTensorWithTargetType(
+      builder, loc, src, elem_type);
+
+  // Step 1: tmp = A * ln(2)
+  builder.create<mlir::hivm::VMulOp>(
+      loc, TypeRange{}, mlir::ValueRange{src, ln2}, mlir::ValueRange{tmp});
+  // Step 2: dst = exp(tmp)
+  builder.create<mlir::hivm::VExpOp>(loc, TypeRange{}, mlir::ValueRange{tmp},
+                                     mlir::ValueRange{dst});
+}
+
 mlir::Value CodeGenTileLangNPUIRAPI::VisitExpr_(const CallNode *op) {
   if (op->op.same_as(Op::Get("tl.npuir_pipe_barrier"))) {
     BarrierCodegen(op);
@@ -2677,6 +2713,8 @@ mlir::Value CodeGenTileLangNPUIRAPI::VisitExpr_(const CallNode *op) {
     VreduceCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_sigmoid"))) {
     VsigmoidCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_exp2"))) {
+    Vexp2Codegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_cumsum"))) {
     VcumsumCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
