@@ -7,11 +7,10 @@ os.environ.setdefault("TILELANG_ASCEND_MODE", "Developer")
 
 import argparse
 
-import torch
-import torch_npu  # noqa: F401  enables .npu() placement
-
 import tilelang
 import tilelang.language as T
+import torch
+import torch_npu  # noqa: F401  enables .npu() placement
 
 tilelang.cache.clear_cache()
 
