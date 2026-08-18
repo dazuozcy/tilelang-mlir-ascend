@@ -35,6 +35,9 @@ SKIP_DIRS = {
     "torch_tl_ops/src",
     "torch_tl_ops/compile",
     "deepseek_v4/inference",
+    "TileOPs/.agents",
+    "TileOPs/benchmarks/ops",
+    "TileOPs/tests/ops"
 }
 
 
