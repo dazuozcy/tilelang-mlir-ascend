@@ -297,6 +297,22 @@ script.
 - **No stubbing**: the imported functions are the full GPU implementations;
   they serve as reference. The NPU component rewrites them for
   `target="npuir"`.
+- **Helper function extraction (mandatory)**: If the GPU TileLang kernel
+  functions reference helper functions (e.g. shared math helpers, utility
+  wrappers, macro factories, or internal dispatchers defined in the GPU
+  repo — whether in the same kernel file or in a sibling module such as
+  `_primitives.py`), those helper functions **must also be extracted into
+  the same file** (`{extracted_file}`) as the kernel functions. The
+  `{op_slug}/` package must be self-contained: every name called by the
+  extracted kernel functions must be defined within `{extracted_file}`.
+  This keeps the implementation flow complete so the NPU kernel component
+  can trace the full call chain when reimplementing for `target="npuir"`.
+  If the extraction script does not automatically pull in a referenced
+  helper, append it manually to `{extracted_file}` and add its name to the
+  import statement in `{op_slug}.py`. When manually appending, copy the
+  helper verbatim from the GPU repo (signature + body), preserve any
+  `@T.macro` / `@T.prim_func` decorators, and follow the GPU import order
+  so dependencies resolve top-down.
 
 **Structural guidance** (op-specific — follow the GPU factory structure):
 
@@ -486,6 +502,18 @@ All Tier 1 checks must pass. This confirms the 7 files are structurally
 correct and the extracted kernel functions are properly imported — ready
 for the NPU kernel component to reimplement for `target="npuir"`.
 
+**Helper completeness check** (mandatory, Part A continuation): After
+Tier 1 passes, scan `{extracted_file}` for every callable name invoked
+by the extracted kernel functions (any `name(...)` call whose `name` is
+not a Python builtin, a TileLang `T.*` API, or a `torch.*`/`tl.*` API).
+For each such name, verify it is defined as a `def` (or `@T.macro` /
+`@T.prim_func` decorated function) inside `{extracted_file}`. If any
+referenced helper is missing, re-run the extraction script with the
+broader scope or append the helper manually (see "Helper function
+extraction (mandatory)" in S3 Part A), then re-run Tier 1. The
+`{op_slug}/` package must be self-contained before the per-kernel
+prompts are emitted in the Output Prompt step.
+
 #### Tier 2 — Runtime verification (after NPU kernel component rewrites kernels for NPUIR)
 
 Once the kernel functions are reimplemented for `target="npuir"` by the
@@ -600,7 +628,8 @@ block per function, in the order the script reported them). The prompt is
 written in Chinese to match the conductor agent's working language.
 
 ```
-迁移 {op} 算子的 TileLang kernel {kernel_function_name}, {op_name} 对应的该 kernel 的 GPU 版本在 {extracted_file}。
+迁移 {op} 算子 {op_name}。 其 TileLang 实现函数 {kernel_function_name} 在 {extracted_file}。
+{kernel_function_name} 是对外接口，不要改变接口的参数(除非该参数跟后端实现相关，在迁移时需要适配)。
 {op_name} 的规格见 examples/TileOPs/tileops/manifest/{family}.yaml中 {op_name} 的 workloads 部分。
 精度用例见 examples/TileOPs/tests/ops/test_{test_slug}.py，
 性能用例见 examples/TileOPs/benchmarks/ops/bench_{bench_slug}.py
@@ -669,7 +698,8 @@ function, both referencing the same extracted file:
 **Prompt 1** (for `_logsumexp_kernel_single`):
 
 ```
-迁移 logsumexp 算子的 TileLang kernel _logsumexp_kernel_single, LogSumExpFwdOp 对应的该 kernel 的 GPU 版本在 tileops/kernels/reduction/logsumexp/_log_sum_exp_fwd_kernels.py。
+迁移 logsumexp 算子 LogSumExpFwdOp。 其 TileLang 实现函数 _logsumexp_kernel_single 在 tileops/kernels/reduction/logsumexp/_log_sum_exp_fwd_kernels.py。
+_logsumexp_kernel_single 是对外接口，不要改变接口的参数(除非该参数跟后端实现相关，在迁移时需要适配)。
 LogSumExpFwdOp 的规格见 examples/TileOPs/tileops/manifest/reduction.yaml中 LogSumExpFwdOp 的 workloads 部分。
 精度用例见 examples/TileOPs/tests/ops/test_softmax.py，
 性能用例见 examples/TileOPs/benchmarks/ops/bench_softmax.py
@@ -679,7 +709,8 @@ LogSumExpFwdOp 的规格见 examples/TileOPs/tileops/manifest/reduction.yaml中 
 **Prompt 2** (for `_logsumexp_kernel_tiled`):
 
 ```
-迁移 logsumexp 算子的 TileLang kernel _logsumexp_kernel_tiled, LogSumExpFwdOp 对应的该 kernel 的 GPU 版本在 tileops/kernels/reduction/logsumexp/_log_sum_exp_fwd_kernels.py。
+迁移 logsumexp 算子 LogSumExpFwdOp。 其 TileLang 实现函数 _logsumexp_kernel_tiled 在 tileops/kernels/reduction/logsumexp/_log_sum_exp_fwd_kernels.py。
+_logsumexp_kernel_tiled 是对外接口，不要改变接口的参数(除非该参数跟后端实现相关，在迁移时需要适配)。
 LogSumExpFwdOp 的规格见 examples/TileOPs/tileops/manifest/reduction.yaml中 LogSumExpFwdOp 的 workloads 部分。
 精度用例见 examples/TileOPs/tests/ops/test_softmax.py，
 性能用例见 examples/TileOPs/benchmarks/ops/bench_softmax.py
