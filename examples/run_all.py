@@ -37,7 +37,7 @@ SKIP_DIRS = {
     "deepseek_v4/inference",
     "TileOPs/.agents",
     "TileOPs/benchmarks/ops",
-    "TileOPs/tests/ops"
+    "TileOPs/tests/ops",
 }
 
 
