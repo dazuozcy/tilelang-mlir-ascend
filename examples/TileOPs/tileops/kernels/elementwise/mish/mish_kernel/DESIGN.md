@@ -470,8 +470,8 @@ T.copy(GM→UB) → vcast → vexp → vadd → vln → vtanh → vmul → vcast
 import torch
 
 def golden_mish(x):
-    """Mish 参考实现，与 torch.nn.functional.mish 等价。
-    
+    """Mish 参考实现，与 torch.nn.functional.mish 等价.
+
     对 fp16/bf16 输入，先上转 fp32 计算再转回，匹配 NPU kernel 精度策略。
     """
     x_f32 = x.to(torch.float32)
