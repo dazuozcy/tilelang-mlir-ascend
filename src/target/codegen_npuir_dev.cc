@@ -2363,6 +2363,23 @@ void CodeGenTileLangNPUIRDEV::VcumsumCodegen(const CallNode *op) {
   SetVarValue(npuirop.dst, newCumsumOp->getResult(0));
 }
 
+void CodeGenTileLangNPUIRDEV::VsortCodegen(const CallNode *op) {
+  /// Generate hivm.hir.vsort for tl.npuir_sort.
+  tvm::tl::NpuirSort npuirop(op->args, this->vmap);
+  mlir::Location loc = builder.getUnknownLoc();
+  Value src = GetVarValue(npuirop.src);
+  Value dst_value = GetVarValue(npuirop.dst_value);
+  Value dst_index = GetVarValue(npuirop.dst_index);
+  mlir::Type val_type = dst_value.getType();
+  mlir::Type idx_type = dst_index.getType();
+  llvm::SmallVector<mlir::Type, 2> result_types({val_type, idx_type});
+  auto newSortOp = builder.create<mlir::hivm::VSortOp>(
+      loc, result_types, src, mlir::ValueRange{dst_value, dst_index},
+      npuirop.descending, npuirop.sort_axis);
+  SetVarValue(npuirop.dst_value, newSortOp->getResult(0));
+  SetVarValue(npuirop.dst_index, newSortOp->getResult(1));
+}
+
 void CodeGenTileLangNPUIRDEV::VsigmoidCodegen(const tvm::tir::CallNode *op) {
   tvm::tl::NpuirSigmoid npuirop(op->args, this->vmap);
   Value src = GetVarValue(npuirop.src);
@@ -3666,6 +3683,8 @@ mlir::Value CodeGenTileLangNPUIRDEV::VisitExpr_(const CallNode *op) {
     VAtomicAddCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_cumsum"))) {
     VcumsumCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
+    VsortCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_gather"))) {
     VgatherCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_transpose"))) {

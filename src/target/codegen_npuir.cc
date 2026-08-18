@@ -787,6 +787,33 @@ void CodeGenTileLangNPUIR::VcmpCodegen(const CallNode *op, std::ostream &os) {
                << op->args[3].as<StringImm>().value()->value << ">\n";
 }
 
+void CodeGenTileLangNPUIR::VsortCodegen(const CallNode *op, std::ostream &os) {
+  /// Generate hivm.hir.vsort for tl.npuir_sort.
+  /// before:
+  ///   T.npuir_sort(src, dst_value, dst_index, descending, sort_axis)
+  /// after:
+  ///   hivm.hir.vsort ins(%src : <type>) outs(%dst_value, %dst_index : <t>,
+  ///   <t>)
+  ///     descending = false sort_axis = -1
+  tvm::tl::NpuirSort npuirop(op->args, this->vmap);
+  String src_data_name = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
+  String dst_value_name =
+      GenSubviewFromRegion(npuirop.dst_value, npuirop.dst_value_range);
+  String dst_index_name =
+      GenSubviewFromRegion(npuirop.dst_index, npuirop.dst_index_range);
+
+  this->PrintIndent();
+  this->stream << "hivm.hir.vsort";
+  this->stream << " ins(%" << src_data_name << " : "
+               << GetMemrefInfo(src_data_name) << ")";
+  this->stream << " outs(%" << dst_value_name << ", %" << dst_index_name
+               << " : " << GetMemrefInfo(dst_value_name) << ", "
+               << GetMemrefInfo(dst_index_name) << ")";
+  this->stream << " descending = " << (npuirop.descending ? "true" : "false");
+  this->stream << " sort_axis = " << npuirop.sort_axis;
+  this->stream << "\n";
+}
+
 void CodeGenTileLangNPUIR::VbrcCodegen(const CallNode *op, std::ostream &os) {
   // Generate hivm.hir.vbrc for tl.npuir_vbrc.
   tvm::tl::NpuirBrc npuirop(op->args, this->vmap);
@@ -1243,6 +1270,8 @@ void CodeGenTileLangNPUIR::VisitExpr_(const CallNode *op, std::ostream &os) {
     UnaryVecOpCodegen<tvm::tl::NpuirRelu>(op, os);
   } else if (op->op.same_as(Op::Get("tl.npuir_select"))) {
     VselectCodegen(op, os);
+  } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
+    VsortCodegen(op, os);
   } else if (op->op.same_as(Op::Get("tl.npuir_cmp"))) {
     VcmpCodegen(op, os);
   } else if (op->op.same_as(Op::Get("tl.npuir_load_nd2nz"))) {

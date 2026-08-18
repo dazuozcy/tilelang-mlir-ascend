@@ -1595,6 +1595,25 @@ void CodeGenTileLangNPUIRAPI::VcumsumCodegen(const CallNode *op) {
       builder.getDenseI64ArrayAttr(npuirop.cum_dims));
 }
 
+void CodeGenTileLangNPUIRAPI::VsortCodegen(const CallNode *op) {
+  /// Generate hivm.hir.vsort for tl.npuir_sort.
+  /// before:
+  ///   T.npuir_sort(src, dst_value, dst_index, descending, sort_axis)
+  /// after:
+  ///   hivm.hir.vsort ins(src) outs(dst_value, dst_index)
+  ///     descending = false sort_axis = -1
+  tvm::tl::NpuirSort npuirop(op->args, this->vmap);
+  mlir::Location loc = builder.getUnknownLoc();
+  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
+  Value dst_value =
+      GenSubviewFromRegion(npuirop.dst_value, npuirop.dst_value_range);
+  Value dst_index =
+      GenSubviewFromRegion(npuirop.dst_index, npuirop.dst_index_range);
+  builder.create<mlir::hivm::VSortOp>(loc, TypeRange{}, src,
+                                      mlir::ValueRange{dst_value, dst_index},
+                                      npuirop.descending, npuirop.sort_axis);
+}
+
 void CodeGenTileLangNPUIRAPI::VsigmoidCodegen(const tvm::tir::CallNode *op) {
   tvm::tl::NpuirSigmoid npuirop(op->args, this->vmap);
   Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
@@ -2660,6 +2679,8 @@ mlir::Value CodeGenTileLangNPUIRAPI::VisitExpr_(const CallNode *op) {
     VsigmoidCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_cumsum"))) {
     VcumsumCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
+    VsortCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_atomic_add"))) {
     VAtomicAddCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_gather"))) {

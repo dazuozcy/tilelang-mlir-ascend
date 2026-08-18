@@ -232,6 +232,7 @@ private:
   void VreduceCodegen(const CallNode *op);
   void VsigmoidCodegen(const CallNode *op);
   void VcumsumCodegen(const CallNode *op);
+  void VsortCodegen(const CallNode *op);
   void VAtomicAddCodegen(const CallNode *op);
   void VgatherCodegen(const CallNode *op);
   void VtransposeCodegen(const CallNode *op);

@@ -134,6 +134,7 @@ private:
   void VcastCodegen(const CallNode *op, std::ostream &os);
   void VcmpCodegen(const CallNode *op, std::ostream &os);
   void VselectCodegen(const CallNode *op, std::ostream &os);
+  void VsortCodegen(const CallNode *op, std::ostream &os);
   void VreduceCodegen(const CallNode *op, std::ostream &os);
   void FixpipeCodegen(const CallNode *op, std::ostream &os);
   void DotCodegen(const CallNode *op, std::ostream &os);

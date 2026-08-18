@@ -1083,6 +1083,48 @@ def npuir_cumsum(
     )
 
 
+def npuir_sort(
+    src,
+    dst_value,
+    dst_index,
+    descending: bool = False,
+    sort_axis: int = -1,
+):
+    """Sort input along sort_axis, output sorted values and original indices.
+
+    Args:
+        src (Union[tir.Buffer, tir.BufferLoad, tir.BufferRegion]): Input tensor
+        dst_value (Union[tir.Buffer, tir.BufferLoad]): Output tensor storing
+            sorted values, same dtype as src.
+        dst_index (Union[tir.Buffer, tir.BufferLoad]): Output tensor storing
+            the original index corresponding to each sorted value (int32/int64).
+        descending (bool, optional): Sort order. False=ascending (default),
+            True=descending.
+        sort_axis (int, optional): Axis to sort. -1 = last axis (default).
+            Currently only the tail axis is supported by the hardware.
+
+    Returns:
+        tir.Call: The TIR call for the sort operation
+    """
+    src_extent = _get_extent(src)
+    val_extent = _get_extent(dst_value)
+    idx_extent = _get_extent(dst_index)
+
+    src_region = _to_region(src, "r", src_extent)
+    dst_value_region = _to_region(dst_value, "w", val_extent)
+    dst_index_region = _to_region(dst_index, "w", idx_extent)
+
+    return tir.call_intrin(
+        "handle",
+        tir.op.Op.get("tl.npuir_sort"),
+        src_region,
+        dst_value_region,
+        dst_index_region,
+        descending,
+        sort_axis,
+    )
+
+
 def npuir_clamp(
     src: tir.Buffer, dst: Optional[tir.Buffer], min_val: PrimExpr, max_val: PrimExpr
 ):
