@@ -38,6 +38,7 @@ SKIP_DIRS = {
     "TileOPs/.agents",
     "TileOPs/benchmarks/ops",
     "TileOPs/tests/ops",
+    "TileOPs/tileops/benchmark",
 }
 
 
