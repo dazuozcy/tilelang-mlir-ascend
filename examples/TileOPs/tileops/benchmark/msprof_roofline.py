@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Compare Roofline metrics: visualize_data.bin (Method 1) vs CSV formulas (Method 2).
 
@@ -230,8 +229,6 @@ def compute_from_csvs(dir_path, config):
 
     sum_cube_cycles = sum(safe_float(r.get("aic_total_cycles")) for r in cube_rows)
     sum_cube_ratio = sum(safe_float(r.get("aic_cube_ratio")) for r in cube_rows)
-    sum_cube_fp16_ratio = sum(safe_float(r.get("aic_cube_fp16_ratio")) for r in cube_rows)
-    sum_cube_int8_ratio = sum(safe_float(r.get("aic_cube_int8_ratio")) for r in cube_rows)
 
     cube_computility = 0
     if cube_rows and sum_cube_cycles > 0:
@@ -491,7 +488,7 @@ def main():
         }
         comparisons.append(("L2 Read + Write", l2, csv_l2, bin_fops_l2, bin_total_bytes_l2))
 
-    for label, bin_entry, csv_vals, bin_fops, bin_total_bytes in comparisons:
+    for _, bin_entry, csv_vals, bin_fops, bin_total_bytes in comparisons:
         print(f"\n  Path: {bin_entry['title']} / {bin_entry['bw_name']}")
 
         bin_rows = [
@@ -526,10 +523,7 @@ def main():
             if cv is None:
                 print(f"  {name:<25} {bv:<22.9f} {'N/A (CSV)':<22} {'N/A':<8} {'N/A':<12}")
                 continue
-            if abs(bv) > 0:
-                rel = abs(bv - cv) / abs(bv)
-            else:
-                rel = abs(bv - cv)
+            rel = abs(bv - cv) / abs(bv) if abs(bv) > 0 else abs(bv - cv)
             match = "YES" if rel < 1e-3 else "NO"
             if match == "NO":
                 all_match = False
