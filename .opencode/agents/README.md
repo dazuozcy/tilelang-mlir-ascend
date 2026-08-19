@@ -1,3 +1,6 @@
++---
++disable: true
++---
 
 # TileLang-NPUIR 算子自动生成系统
 
