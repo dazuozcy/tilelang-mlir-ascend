@@ -341,6 +341,26 @@ NpuirCumsum::NpuirCumsum(Array<PrimExpr> args, BufferMap vmap) {
   reverse = args[3].as<Bool>().value();
 }
 
+NpuirSort::NpuirSort(Array<PrimExpr> args, BufferMap vmap) {
+  Array<Range> rgs[3];
+  Buffer bf[3];
+  for (int i = 0; i < 3; i++) {
+    auto expr = args[i];
+    auto call = expr.as<CallNode>();
+    ICHECK(call);
+    auto region = RegionOp(call->args, vmap);
+    rgs[i] = region.GetRanges();
+    bf[i] = region.GetBuffer();
+  }
+  std::tie(this->src, this->dst_value, this->dst_index) =
+      std::tie(bf[0], bf[1], bf[2]);
+  std::tie(this->src_range, this->dst_value_range, this->dst_index_range) =
+      std::tie(rgs[0], rgs[1], rgs[2]);
+
+  descending = args[3].as<Bool>().value();
+  sort_axis = args[4].as<IntImmNode>()->value;
+}
+
 NpuirAtomicAdd::NpuirAtomicAdd(Array<PrimExpr> args, BufferMap vmap) {
   Array<Range> rgs[2];
   Buffer bf[2];
@@ -774,6 +794,11 @@ TIR_REGISTER_TL_OP(NpuirReduce, npuir_reduce)
 
 TIR_REGISTER_TL_OP(NpuirCumsum, npuir_cumsum)
     .set_num_inputs(4)
+    .set_attr<TCallEffectKind>("TCallEffectKind",
+                               Integer(CallEffectKind::kOpaque));
+
+TIR_REGISTER_TL_OP(NpuirSort, npuir_sort)
+    .set_num_inputs(5)
     .set_attr<TCallEffectKind>("TCallEffectKind",
                                Integer(CallEffectKind::kOpaque));
 

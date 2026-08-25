@@ -347,6 +347,21 @@ public:
   Array<Range> src_range, dst_range;
 };
 
+/// HIVM vector sort operation.
+/// Sort the sorting axis of src, output sorted values and original indices.
+class NpuirSort : public Operator {
+public:
+  NpuirSort(Array<PrimExpr> args, BufferMap vmap);
+
+  static const Op &Get();
+
+  Buffer src, dst_value, dst_index;
+  bool descending;
+  int64_t sort_axis;
+
+  Array<Range> src_range, dst_value_range, dst_index_range;
+};
+
 class NpuirAtomicAdd : public Operator {
 public:
   NpuirAtomicAdd(Array<PrimExpr> args, BufferMap vmap);
