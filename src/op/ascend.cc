@@ -145,6 +145,7 @@ NPUIR_UNARY_OP_CTOR(Rec, rec)
 NPUIR_UNARY_OP_CTOR(Not, not)
 NPUIR_UNARY_OP_CTOR(Floor, floor)
 NPUIR_UNARY_OP_CTOR(Exp2, exp2)
+NPUIR_UNARY_OP_CTOR(Log2, log2)
 
 NpuirBrc::NpuirBrc(Array<PrimExpr> args, BufferMap vmap) {
   in = args[0], out = args[1];

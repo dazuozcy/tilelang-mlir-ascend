@@ -12,7 +12,6 @@ from tilelang import _ffi_api
 from .kernel import FrameStack
 import threading
 import os
-import math
 
 from tilelang.language.copy import (
     buffer_region_to_tile_region,
@@ -455,25 +454,23 @@ def npuir_exp2(A, B):
     return AscendUnaryOp("exp2", A, B).buildTirCall()
 
 
-def npuir_log2(A, B, Tmp):
-    """Compute log2(A) = log(A) * (1 / ln(2)).
+def npuir_log2(A, B):
+    """Compute log2(A) = log2(A).
+
+    The hardware lacks a native vector log2 instruction, so the op is
+    lowered in codegen to ``B = ln(A) * (1 / ln(2))`` using a
+    compiler-managed temporary buffer. The temporary is analyzed and
+    allocated by the codegen from ``A``'s region, so it does not appear
+    in the user-facing API.
 
     Args:
         A (Union[tir.Buffer, tir.Var]): Input
         B (Union[tir.Buffer, tir.Var]): Output
-        Tmp (Union[tir.Buffer, tir.Var]): Temp buffer
 
     Returns:
-        tir.Stmt: The TIR statements for the log2 operation
+        tir.Call: The TIR call for the log2 operation
     """
-
-    log_call = AscendUnaryOp("ln", A, Tmp).buildTirCall()
-
-    inv_ln2 = tir.const(1.0 / math.log(2.0), A.dtype)
-    mul_call = AscendBinaryOp("mul", Tmp, inv_ln2, B).buildTirCall()
-
-    T.evaluate(log_call)
-    T.evaluate(mul_call)
+    return AscendUnaryOp("log2", A, B).buildTirCall()
 
 
 def npuir_select(Cond, A, B, Out):
