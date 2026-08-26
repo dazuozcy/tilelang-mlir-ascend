@@ -1,0 +1,53 @@
+# attention_indexing.yaml -- manifest entries for the 'attention_indexing' family (NPU benchmark).
+#
+# Standalone spec; no dependency on the TileOPs repository.
+# See docs/gpu_to_npu_adaptation.md for the GPU-to-NPU adaptation notes.
+
+TopkSelectorOp:
+  ref_api: "torch.topk"
+  family: attention_indexing
+  status: implemented
+
+  signature:
+    inputs:
+      index_score: {dtype: "float32", shape: "[batch, seq_len, seq_len_kv, kv_group]"}
+      starts: {dtype: "int32", shape: "[batch, seq_len]"}
+      ends: {dtype: "int32", shape: "[batch, seq_len]"}
+    outputs:
+      indexes: {dtype: "int32", shape: "[batch, seq_len, kv_group, topk]"}
+    params:
+      topk: {type: int}
+    shape_rules:
+    - "index_score.ndim == 4"
+    - "starts.shape == (index_score.shape[0], index_score.shape[1])"
+    - "ends.shape == (index_score.shape[0], index_score.shape[1])"
+    - "0 < topk <= index_score.shape[2]"
+
+  workloads:
+    # Smoke: small score tensor (matches the GPU test smoke param)
+  - {batch: 4, seq_len: 256, seq_len_kv: 1024, kv_group: 1, topk: 32, in_dtype: float32, out_dtype: int32, dtypes: [float32], label: "smoke-topk32-s256-kv1k"}
+    # Full: mid-size (matches the GPU test full param)
+  - {batch: 8, seq_len: 512, seq_len_kv: 2048, kv_group: 1, topk: 64, in_dtype: float32, out_dtype: int32, dtypes: [float32], label: "topk64-s512-kv2k"}
+    # Full: GPU manifest workload (lightning-attention top-k selection scale)
+  - {batch: 1, seq_len: 32768, seq_len_kv: 65536, kv_group: 1, topk: 1024, in_dtype: float32, out_dtype: int32, dtypes: [float32], label: "topk1024-s32k-kv64k"}
+  - {batch: 1, seq_len: 32768, seq_len_kv: 65536, kv_group: 1, topk: 2048, in_dtype: float32, out_dtype: int32, dtypes: [float32], label: "topk2048-s32k-kv64k"}
+
+  # Roofline ported from the GPU manifest func
+  # ``tileops.perf.formulas.topk_selector_roofline`` (device-agnostic):
+  #   flops = comparisons; bytes = score read + starts/ends + index write.
+  roofline:
+    vars:
+      comparisons: "batch * seq_len * kv_group * seq_len_kv"
+      in_elem_bytes: "itemsize(in_dtype)"
+      out_elem_bytes: "itemsize(out_dtype)"
+    flops: "comparisons"
+    bytes: "comparisons * in_elem_bytes + batch * seq_len * 2 * out_elem_bytes + batch * seq_len * kv_group * topk * out_elem_bytes"
+
+  source:
+    kernel: tileops/kernels/attention_indexing/topk_selector/topk_selector.py
+    kernel_map:
+      topk_selector_kernel: TopkSelectorKernel
+    op: tileops/ops/attention_indexing/topk_selector.py
+    test: tests/ops/test_topk_selector.py
+    bench: benchmarks/ops/bench_topk_selector.py
+    bench_manifest_driven: true
