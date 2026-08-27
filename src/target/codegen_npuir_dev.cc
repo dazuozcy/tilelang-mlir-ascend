@@ -2453,11 +2453,20 @@ void CodeGenTileLangNPUIRDEV::VgatherCodegen(const CallNode *op) {
 void CodeGenTileLangNPUIRDEV::VtransposeCodegen(const CallNode *op) {
   tvm::tl::NpuirTranspose npuirop(op->args, this->vmap);
   Value src = GenExtractSliceFromRegion(npuirop.src, npuirop.src_range);
+  Value dst_ori = GetVarValue(npuirop.dst);
   Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
   auto permutation = builder.getDenseI64ArrayAttr(npuirop.permutation);
   mlir::Type dstType = dst.getType();
   auto transposeOp = builder.create<mlir::hivm::VTransposeOp>(
       builder.getUnknownLoc(), mlir::TypeRange{dstType}, src, dst, permutation);
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(transposeOp->getResult(0),
+                                                  dst_ori, npuirop.dst_range)
+                      : transposeOp->getResult(0);
+  // Bind the transpose result to the dst buffer, otherwise the op result is
+  // unused and gets eliminated as dead code by the canonicalizer.
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::VinterleaveCodegen(const CallNode *op) {
