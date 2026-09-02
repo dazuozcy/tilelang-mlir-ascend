@@ -31,6 +31,7 @@ description: "根据冻结的 DESIGN.md 生成算子实现（{op}.py：kernel + 
 ### Phase 1：读取设计
 1. Read `DESIGN.md` 全文，提取：算子名、I/O 规格、编程模式、API 映射、Tiling、内存层级、同步策略、L0 测试计划、精度标准。
 2. Read `REVIEW.md`，确认检视已通过（如有 warn 项记录但不阻塞）。
+3. Read `tilelang-op-optimize` skill 的 [references/pattern-library.md](../tilelang-op-optimize/references/pattern-library.md) §1/§2（已验证模式与编译器/运行时陷阱，**注意版本戳**——重编译后旧结论待重验）——实现与调试前必读；调试中命中的条目在返回的 `skills_consulted` 中注明引用。
 
 ### Phase 2：生成 kernel
 1. 按 DESIGN.md §3 API 映射 + §6 循环结构生成 `@tilelang.jit(target="npuir")` kernel。
@@ -54,6 +55,18 @@ description: "根据冻结的 DESIGN.md 生成算子实现（{op}.py：kernel + 
 | 输出与 golden 函数输出对比精度未过 | `[PRECISION_FAIL]` |
 | 发现设计层错误（API 不可用、L0C 溢出、内存层级冲突等实现层无法修复） | `[DESIGN_ERROR]` + 原因 |
 | 无标记且 exit code ≠ 0 | 运行失败（conductor 按 retry_impl 路由） |
+
+### Phase 6：任务复盘（Retrospective，自进化钩子）⭐
+
+返回 `[PRECISION_PASS]` 或 `[DESIGN_ERROR]` 前（`[PRECISION_FAIL]` / 运行失败**不写**——失败摘要已由 conductor 路由），向 `examples/{project}/{op}/RETROSPECTIVE.md` **追加**复盘章节（先 Read 既有内容，整文件写回，只追加不覆盖历史章节）：
+
+- 章节模板与字段规范（canonical）：`tilelang-skill-evolution` skill 的 [references/retrospective-schema.md](../tilelang-skill-evolution/references/retrospective-schema.md)。两个标准表（Skill Flow Issues / Value Point Proposals）+ Transferable Lessons 小节。
+- **PASS 复盘覆盖整个 attempt 链**（含中间失败中的发现）：
+  - API 实际行为实证（D 类，须带三件套）：如某 API 的隐藏限制、对齐触发条件、静默 dtype 转换、合法形态边界；
+  - 有效的调试手法（P 类）：如精度问题的定位顺序、IR dump 关键点；
+  - `[DESIGN_ERROR]` 的根因与设计判断教训（P/R 类）：哪类设计判断错了、正确依据是什么。
+- **Transferable Lessons**（迁移多函数任务必写，其他场景可 none）：写给本迁移任务**后续函数**实施者的跨函数教训，一条一行，自包含（不依赖本函数上下文可理解）。
+- 质量红线：无则如实写 `none`；单任务偶然现象不得写成通用规则；不得硬凑。
 
 ---
 

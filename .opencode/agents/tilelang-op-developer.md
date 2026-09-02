@@ -80,6 +80,7 @@ conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为：
 | 必需输入 | `mode`、`attempt_index` | 调度参数 |
 | 可选输入 | `last_failure_summary` | 重试时传入 |
 | 输出文件 | `examples/{project}/{op}/{op}.py` | — |
+| 输出文件 | `examples/{project}/{op}/RETROSPECTIVE.md` | Stage 3 复盘章节（skill Phase 6；返回 `[PRECISION_PASS]` / `[DESIGN_ERROR]` 前追加写入） |
 | 使用 Skill | `tilelang-op-develop` | 生成代码 + 测试 + 三态判定 |
 
 ---

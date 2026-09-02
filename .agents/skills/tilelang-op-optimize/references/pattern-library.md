@@ -2,7 +2,9 @@
 
 > 本文件收录**已实测验证**的性能模式、代价数据与实验方法学规则。来源：真实调优任务的 msprof/NPU event 实测（首版素材：AvgPool2dFwdOp optimize 任务，2026-08，Ascend910B2C，数据可追溯至该任务 `perf_opt/opt_log.md`）。
 >
-> **维护规则**：每次调优任务产出的新模式/代价数据/证伪更正，由调优 Agent 在任务结束前追加到对应章节（含任务溯源与工具链版本）。模式库只有在"每次被读"的位置上才不会遗忘。
+> **维护规则**：每次调优任务产出的新模式/代价数据/证伪更正，由调优 Agent 在任务结束前追加到对应章节（含任务溯源与工具链版本戳）。模式库只有在"每次被读"的位置上才不会遗忘。**任务终态另有 `tilelang-skill-evolver`（`tilelang-skill-evolution` skill）统一蒸馏合入**——它是本文件的第二个授权写入者（覆盖 §1/§2/§4 的增量条目，五种 delta：add/update/consolidate/negate/deprecate；含其他 Stage 产出的 D/C 类价值点）；两次写入互补防双写（evolver 跳过已回写条目）。
+>
+> **预算与生命周期**（由 evolver 维护）：§1–§3 知识区预算 300 行、§4 案例索引预算 150 行，超限触发 consolidate（合并同类、压缩措辞；负面条目只可 deprecate 不可删除）；`update` 优先于 `add`（同主题已有条目时禁止新开）；工具链变更后相关条目自动降级"待重验"。
 
 ## 1. 向量化轴与布局模式（优先级最高的检索项）
 
@@ -67,3 +69,15 @@
 1. **首轮必查项**：① 向量化轴/布局重估（对照 §1，即使上游设计已定——设计期结论可能基于旧工具链）；② 标量执行占比诊断（>50% 触发换轴）；③ 本模式库 §2 版本戳核对（工具链变更则重验）。
 2. 新模式/新代价数据/证伪更正 → 任务结束前追加进本文件对应章节（含溯源）。
 3. 本库模式是**起点不是终点**：每算子的最优 tiling（CH/BH/block）仍须实测扫描。
+
+## 4. 案例索引（同类问题的正/反例参考）
+
+> **用途**：按"哪类问题该参考哪个算子目录"组织 `examples/` 的检索入口。Stage 1 设计（强制步骤 0.5）与本 skill Phase 0 均会读取本节——命中时优先精读对应算子目录，优先于盲目 Glob。**维护**：由 `tilelang-skill-evolver` 在任务终态追加（C 类，Tier 0）；条目 = 路径 + 一句话 + 适用触发条件，不复制内容；路径失效或长期零引用 → deprecate。
+
+| 算子目录 | 一句话 | 适用触发条件 | 溯源 |
+|---|---|---|---|
+| `examples/TileOPs/tileops/kernels/pool/max_pool3d/max_pool3d_kernel/` | TileOPs 集成包形态：kernel + `{func}_DESIGN.md` 快照 + 聚合 `__init__.py` + integration_log | migration-harness 集成结构参考；Stage 5 集成问题排查 | 2026-08 max_pool3d harness 迁移 |
+| `examples/TileOPs/tileops/kernels/reduction/logsumexp/_logsumexp_kernel_single/` | 规约类（logsumexp）独立算子目录：DESIGN.md + kernel + 分层测试 | 规约类（水平归约/online 单遍）设计与 L0 测试计划参考 | 2026-08 logsumexp 迁移 |
+| `examples/maxpool3d/_max_pool3d_kernel/` | standalone 形态的池化算子目录（DESIGN.md + kernel） | 窗口/池化类设计参考（分核策略、边界处理） | 2026-08 maxpool3d 开发 |
+
+> 反例档案（BLOCKED 终态任务的根因链）同样入本节，标注「反例」；当前暂无条目。

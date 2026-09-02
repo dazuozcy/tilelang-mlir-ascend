@@ -22,6 +22,21 @@
 
 ---
 
+## 价值点分类（vp_type，所有产出表必填）
+
+复盘产出按四类标注（判定口径：**有数字的是 D，有方法的是 P，改流程的是 R，可参考的是 C**；canonical 定义见 `tilelang-skill-evolution` skill 的 [references/distillation-rules.md](../../tilelang-skill-evolution/references/distillation-rules.md) §3）：
+
+| vp_type | 定义 | 本次调优的典型来源 | 归宿 |
+|---------|------|------------------|------|
+| **D 实测数据** | 性能数字、代价常数、编译器/运行时陷阱实证、API 行为实证（含证伪更正） | 新实测代价、实验裁决实测出的未知常数、新陷阱实证 | 已按 SKILL.md Phase 4 第 6 条回写 pattern-library 的在表中记录**回写位置**（防蒸馏双写）；未回写的由终态蒸馏（`tilelang-skill-evolver`）合入 |
+| **P 模式方法** | 瓶颈模式 BP_xxx、调试手法、结构策略 | 新 BP 候选、有效/无效的结构实验结论 | 提案入队 `.agents/evolution/queue.md`，2 次独立证据后合入 |
+| **R 流程规则** | skill 流程、conductor 路由/门禁、Agent 契约修改建议 | Skill Flow Issues 中 suggested_doc_change 指向流程文件的行 | 提案入队，人工审批后合入 |
+| **C 案例索引** | 值得参考的算子目录（正/反例） | 倍率 > 2x 的结构性优化案例、终态失败档案 | pattern-library §4 案例索引 |
+
+**证据三件套（D 类必填）**：溯源路径（本任务工件内定位）+ 复现命令（或复现条件 shape/dtype/dispatch）+ 工具链版本戳（tilelang build/commit + 设备 + CANN 版本）。缺任一时 evolver 会降级处理，但源头写全可减少往返。
+
+---
+
 ## Step 1：复盘 Skill 流程
 
 从 `perf_opt/opt_log.md` 回看本次调优过程，检查 skill 流程是否有问题。
@@ -57,7 +72,9 @@
 - 它有可验证指标。
 - 它不是单个算子的偶然实现细节。
 
-如果只是对现有模式的补充，优先提出“更新现有 BP_xxx”的建议，不要强行新增模式。
+如果只是对现有模式的补充，优先提出"更新现有 BP_xxx"的建议，不要强行新增模式。
+
+> **新增**：非 BP 类价值点同样提取——实测数据（D）、流程问题（R）、案例索引（C）按「价值点分类」表标注 vp_type 填入 Value Point Proposals 表；`family_no_gain` / `config_no_gain` 类**负向结论**若带实验记录佐证，按 P 类（negate 倾向）记录，防后续任务重蹈覆辙。
 
 ---
 
@@ -72,15 +89,15 @@
 
 ### Skill Flow Issues
 
-| area | issue | evidence | suggested_doc_change |
-|---|---|---|---|
-| none | none | none | none |
-
-### BP Proposals
-
-| proposal_id | type | source_case | summary | target_doc |
+| area | issue | evidence | suggested_doc_change | vp_type |
 |---|---|---|---|---|
-| none | none | none | none | none |
+| none | none | none | none | - |
+
+### Value Point Proposals（含 BP_xxx）
+
+| title | vp_type | evidence | repro | toolchain_stamp | target_doc |
+|---|---|---|---|---|---|
+| none | - | - | - | - | - |
 ```
 
 字段说明：
@@ -89,11 +106,12 @@
 - `issue`：本次暴露的问题，没有则写 `none`
 - `evidence`：来自 `opt_log.md`、profile 或实验分支的证据
 - `suggested_doc_change`：建议修改哪个文档，以及怎么改
-- `proposal_id`：新的或待更新的 `BP_xxx`
-- `type`：`new_bp / update_bp / none`
-- `source_case`：触发该建议的 operator、dispatch、workload 或实验分支
-- `summary`：模式或更新建议的一句话说明
-- `target_doc`：通常为 `bottleneck-patterns.md`
+- `vp_type`：`D / P / R / C`（见「价值点分类」表；流程问题行指向流程文件时标 R，指向数据/模式文件时标 P/D）
+- `title`：一句话，含可检索关键词；更新已有 BP 时写 `update BP-xxx: {一句话}`
+- `evidence`（价值点表）：溯源路径（`opt_log.md#round-N` / `profiles/` 路径）；D 类若已回写 pattern-library，此处写回写位置（如 `pattern-library §1.x（已回写）`）
+- `repro`：复现命令或复现条件（shape/dtype/dispatch）；不可复现写 `none`
+- `toolchain_stamp`：tilelang build/commit + 设备 + CANN 版本；无法确定如实标注
+- `target_doc`：通常为 `bottleneck-patterns.md`；D 类为 `pattern-library.md`，R 类为具体流程文件
 
 ---
 
@@ -103,7 +121,9 @@
 
 ```markdown
 - skill_retrospective: {none_or_summary}
-- bp_proposals: {none_or_list}
+- value_point_proposals: {none_or_list}   # 含 BP_xxx 与 D/P/R/C 各类，逐条带 vp_type
 ```
 
 如果提出了 `BP_xxx`，只作为 proposal 返回，不直接修改 skill 文档。
+
+> **与终态蒸馏的衔接**：本文件产出的复盘表由 conductor 在任务终态调度 `@tilelang-skill-evolver`（`tilelang-skill-evolution` skill）统一蒸馏与分级合入——D/C 类（Tier 0）自动合入 pattern-library（Phase 4 第 6 条的任务内回写除外，防双写），P 类（Tier 1）入队等 2 次独立证据，R 类（Tier 2）入队等人工审批。复盘表的字段（vp_type / evidence / repro / toolchain_stamp）就是蒸馏的输入，请按 schema 写全。

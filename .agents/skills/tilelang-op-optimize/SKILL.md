@@ -27,7 +27,7 @@ description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调�
 - Phase 2 每轮现象分析时读取：[iteration-diagnosis.md](references/iteration-diagnosis.md)
 - Phase 2 生成候选优化点时按需读取：[bottleneck-patterns.md](references/bottleneck-patterns.md)
 - Phase 2 候选优化点包含 autotune 时读取：[autotune.md](references/autotune.md)
-- Phase 4 调优复盘时读取：[skill-retrospective.md](references/skill-retrospective.md)
+- Phase 4 调优复盘时读取：[skill-retrospective.md](references/skill-retrospective.md)（产出按 vp_type D/P/R/C 标注 + 证据三件套，供任务终态 `tilelang-skill-evolver` 蒸馏）
 
 按需参考同类 skill：
 
@@ -81,7 +81,7 @@ Phase 2 是多轮闭环。优化点分析不做成一次性前置步骤；每轮
 每轮执行：
 
 1. 固定本轮 base：当前 best 版本和它的最新 profile。
-2. 读取 [iteration-diagnosis.md](references/iteration-diagnosis.md)，基于 base profile 整理当前现象；生成候选优化点时按需查阅 [bottleneck-patterns.md](references/bottleneck-patterns.md)。
+2. 读取 [iteration-diagnosis.md](references/iteration-diagnosis.md) 与 [bottleneck-patterns.md](references/bottleneck-patterns.md)（**每轮必读**——模式库是候选优化点的直接来源，且模式库只有在被读的位置上才不会遗忘），基于 base profile 整理当前现象。
 3. 从同一个 base 派生多个实验分支：`perf_opt/{op}_opt_v{iter}_{opt_id}.py`。
 4. 每个实验分支只改一个主要优化点。
 5. 每个实验分支跑 L0 精度回归。
@@ -112,8 +112,8 @@ Phase 2 是多轮闭环。优化点分析不做成一次性前置步骤；每轮
 2. 回看 `perf_opt/opt_log.md` 中的 baseline、多 dispatch 数据、候选优化点、实验分支、winner、rollback、blocked、`config_no_gain` 和 `family_no_gain`。
 3. 判断本次调优是否暴露出 skill 流程问题。
 4. 判断是否需要提出新的 `BP_xxx`，或更新已有 `BP_xxx`。
-5. 把复盘写入 `perf_opt/opt_log.md` 的 `Skill Retrospective` 章节。
-6. **回写 pattern-library.md（例外授权）**：本次调优产出的新模式（含代码形态与实测代价）、新代价数据、编译器陷阱新实证/证伪更正，**必须**追加到 `references/pattern-library.md` 对应章节（含任务溯源与工具链版本戳）——该文件是数据积累文件而非流程文档，本条是"不自动修改 skill 文档"禁令的唯一例外。流程/结构层面的改进仍只提 BP proposal，不自动改。
+5. 把复盘写入 `perf_opt/opt_log.md` 的 `Skill Retrospective` 章节。复盘产出按 **vp_type（D/P/R/C）** 标注并写全**证据三件套**（evidence + repro + toolchain_stamp），供任务终态 `tilelang-skill-evolver`（`tilelang-skill-evolution` skill）蒸馏与分级合入——D/C 类自动合入（Tier 0），P 类入队等 2 次独立证据（Tier 1），R 类入队等人工审批（Tier 2）。
+6. **回写 pattern-library.md（例外授权）**：本次调优产出的新模式（含代码形态与实测代价）、新代价数据、编译器陷阱新实证/证伪更正，**必须**追加到 `references/pattern-library.md` 对应章节（含任务溯源与工具链版本戳）——该文件是数据积累文件而非流程文档，本条是"不自动修改 skill 文档"禁令的唯一例外。流程/结构层面的改进仍只提 proposal，不自动改。**本条任务内回写与终态 evolver 蒸馏互补防双写：已回写的条目在复盘表 evidence 中注明回写位置。**
 7. 如果项目流程要求 `Optimize.md`，从最终 `opt_log.md` 摘要最终结果、关键有效优化点、中止原因、遗留问题和复盘摘要。
 8. 不自动修改 skill 流程文档（SKILL.md 及 references 除 pattern-library.md 外）；只在最终报告里列出建议和 BP proposal。
 9. 返回 `TUNING_COMPLETED`。
@@ -197,7 +197,7 @@ autotune 只负责在给定搜索空间中选参数，不是最终裁判。若�
 - improvement: {x}%
 - stop_reason: {reason}
 - skill_retrospective: {none_or_summary}
-- bp_proposals: {none_or_list}
+- value_point_proposals: {none_or_list}   # 含 BP_xxx 与 D/P/R/C 各类，逐条带 vp_type
 - skills_consulted: {paths}
 - summary: {one_sentence}
 - issues: {none_or_notes}
