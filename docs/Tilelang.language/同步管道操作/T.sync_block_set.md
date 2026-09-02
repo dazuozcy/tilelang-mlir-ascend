@@ -56,9 +56,9 @@ def simple_sync(M, N, block_M, block_N, dtype="float16", inner_dtype="float32"):
                 C_BUF = T.alloc_L0C((block_M, block_N), inner_dtype)
 
                 with T.rs("PIPE_FIX"):
-                    T.sync_block_wait(1)  
+                    T.sync_block_wait(1)
                     T.npuir_store_fixpipe(C_BUF, B[bx, by], [block_M, block_N], enable_nz2nd=True)
-                    T.sync_block_set(0)    
+                    T.sync_block_set(0)
 
                 with T.rs("PIPE_FIX"):
                     for i in range(0, FFTS_FLAG_THRESHOLD):
@@ -70,14 +70,14 @@ def simple_sync(M, N, block_M, block_N, dtype="float16", inner_dtype="float32"):
 
                 with T.rs("PIPE_MTE2"):
                     for i in range(0, FFTS_FLAG_THRESHOLD):
-                        T.sync_block_set(1)   
+                        T.sync_block_set(1)
 
                 C_VEC = T.alloc_ub((block_M, block_N), dtype)
 
                 with T.rs("PIPE_MTE2"):
-                    T.sync_block_wait(0)  
+                    T.sync_block_wait(0)
                     T.copy(B[bx, by], C_VEC)
-                    T.sync_block_set(1)   
+                    T.sync_block_set(1)
     return main
 ```
 

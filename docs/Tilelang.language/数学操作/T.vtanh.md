@@ -12,18 +12,18 @@ T.vtanh(src, dst)
 
 ### 2.1 参数说明
 
-| 参数名  | 类型  | 说明  |
-| ------------ | ------------ | ------------ |
-| `src` | `tensor` | 输入tensor  |
-| `dst` | `tensor` | 输出tensor  |
+| 参数名  | 类型       | 说明       |
+| ------- | ---------- | ---------- |
+| `src` | `tensor` | 输入tensor |
+| `dst` | `tensor` | 输出tensor |
 
 ### 2.2 支持规格
 
 #### 2.2.1 DataType支持
 
-|   | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
-| ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ |
-| Ascend | ×  | × |  × |  × | ×  | ×  | ×  | ×  | √  | √ |  ×  | ×  |
+|        | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
+| ------ | ----- | ---- | ------ | ----- | ------ | ----- | ------ | ----- | ---- | ---- | ---- | --------- |
+| Ascend | ×    | ×   | ×     | ×    | ×     | ×    | ×     | ×    | √   | √   | ×   | ×        |
 
 #### 2.2.2 Shape支持
 
@@ -51,11 +51,14 @@ def vec_tanh(M, N, dtype):
 
             T.copy(src, src_ub)
             T.vtanh(src_ub, dst_ub)
-            T.copy(src_ub, dst)
+            T.copy(dst_ub, dst)
 
     return main
 ```
 
 ## 3. Tilelang Op到Ascend NPU IR Op的转换
 
-**tilelang::vtanhOp**将被转换为arith::ConstantOp、arith::DivFOp、hivm::VMulOp、hivm::VAddOp
+**tilelang::vtanhOp**的转换按模式分派：
+
+- Developer 模式：`arith::ConstantOp`、`hivm::VExpOp`、`hivm::VSubOp`、`hivm::VAddOp`、`hivm::VMulOp`、`hivm::VDivOp`（`tanh(x) = (exp(2x)-1)/(exp(2x)+1)`）
+- Expert 模式：`arith::ConstantOp`、`hivm::VMulOp`、`hivm::VAddOp`（多项式逼近）

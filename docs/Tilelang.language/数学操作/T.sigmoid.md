@@ -1,12 +1,14 @@
-# Tilelang.language.sigmoid
+# Tilelang.language.vsigmoid
 
 ## 1. OP概述
 
-简介：`tilelang.language.sigmoid` 返回给定向量/变量的sigmoid计算结果
+简介：`tilelang.language.vsigmoid` 返回给定向量/变量的sigmoid计算结果
 
 ```python
 T.vsigmoid(src, dst)
 ```
+
+注：`T.sigmoid` 是 TIR 标量表达式函数（`tilelang/language/tir/op.py`），仅用于标量表达式；向量算子为 `T.vsigmoid`。
 
 ## 2. OP规格
 

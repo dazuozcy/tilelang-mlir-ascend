@@ -22,12 +22,17 @@ T.Parallel(ub_0, ub_1, ...,  ub_N)
 
 `T.Parallel` 的参数为scalar，主要类型限制取决于循环体内的标量计算算子，目前已支持标量操作为：
 
-* 指数计算：`T.exp`
-* 加减乘除：使用 `+`, `-`, `*`, `/` 即可
-* sigmoid: `T.sigmoid`
-* 广播：`T.vbrc`
-* 比较操作：使用 `==`, `!=`, `<`, `<=`, `>`, `>=` 即可
-* 条件分支：`T.if_then_else`，当前不支持直接使用循环变量的条件语句，例如 `T.if_then_else(i>j, xxx, xxx)`
+- 指数计算：`T.exp`
+- 对数计算：`T.log`
+- 加减乘除：使用 `+`, `-`, `*`, `/` 即可
+- 开方：`T.sqrt`、`T.rsqrt`
+- 绝对值：`T.fabs`
+- 最值：`T.min`、`T.max`
+- sigmoid: `T.sigmoid`
+- 广播：`T.vbrc`
+- 类型转换：`T.cast` / `T.vcast`
+- 比较操作：使用 `==`, `!=`, `<`, `<=`, `>`, `>=` 即可
+- 条件分支：`T.if_then_else`，当前不支持直接使用循环变量的条件语句，例如 `T.if_then_else(i>j, xxx, xxx)`
 
 #### 2.2.2 Shape支持
 
@@ -35,8 +40,8 @@ T.Parallel(ub_0, ub_1, ...,  ub_N)
 
 ### 2.3 特殊限制说明
 
-* `T.Parallel` 内下标不能做变换，即对于一条语句 `C[i]=A[i]+B[i]`，其中的下标 `i` 不能做任何变换，例如 `i+1` 等
-* 循环体内的变量必须是alloc申请出的UB上的Buffer，不能是直接传入的GM上的Tensor变量，以 2.4 使用方法中的代码为例，必须使用 `A_shared`, `B_shared`, `C_local`, 而不能直接使用传入的函数参数变量 `A`, `B`, `C`
+- `T.Parallel` 内下标不能做变换，即对于一条语句 `C[i]=A[i]+B[i]`，其中的下标 `i` 不能做任何变换，例如 `i+1` 等
+- 循环体内的变量必须是alloc申请出的UB上的Buffer，不能是直接传入的GM上的Tensor变量，以 2.4 使用方法中的代码为例，必须使用 `A_shared`, `B_shared`, `C_local`, 而不能直接使用传入的函数参数变量 `A`, `B`, `C`
 
 ### 2.4 使用方法
 

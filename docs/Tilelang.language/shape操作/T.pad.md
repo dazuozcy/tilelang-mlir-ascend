@@ -16,7 +16,7 @@ T.pad(src, dst, pad_value, low, high, size)
 |-------|----------|------|
 | `src` | `tensor` | 源张量  |
 | `dst` | `tensor` | 目的张量 |
-| `pad_value` | Python 标量 | 填充值 |
+| `pad_value` | 类型化标量常量 | 填充值（如 `T.float16(0)`），约束详见 2.3 特殊限制说明 |
 | `low` | `List[Union[int, tir.Var]]` 或 `Tuple[...]` | 沿各维度「起始端」的 padding 长度 |
 | `high` | `List[Union[int, tir.Var]]` 或 `Tuple[...]` | 沿各维度「结束端」的 padding 长度 |
 | `size`(可选) | `List[int]`，默认 `[]` | 手动指定 src 的逻辑 shape
@@ -27,13 +27,17 @@ T.pad(src, dst, pad_value, low, high, size)
 
 |              | int8 | int16 | int32 | uint8 | uint16 | uint32 | uint64 | int64 | fp16 | fp32 | fp64 | bf16 | bool |
 |:-------------|:----:|:-----:|:-----:|:-----:|:------:|:------:|:------:|:-----:|:----:|:----:|:----:|:----:|:----:|
-| Ascend A2/A3 |  ×   |   ×   |   ×   |   ×   |   ×    |   ×    |   ×    |   ×   |  √   |  √   |  ×   |  ×   |  ×
+| Ascend A2/A3 |  ×   |   ×   |   √   |   ×   |   ×    |   ×    |   ×    |   ×   |  √   |  √   |  ×   |  ×   |  ×
 
 #### 2.2.2 Shape 支持
 
 仅支持 1-5D tensor
 
-### 2.3 使用方法
+### 2.3 特殊限制说明
+
+`pad_value` 必须是类型化常量（如 `T.float16(0)`），且类型与数据 dtype 一致；Python 字面量 `0.0` 会编译失败（`'hivm.hir.vbrc' op requires the same element type for all operands`）
+
+### 2.4 使用方法
 
 **示例 ：二维 tile 上对行维做对称 padding**
 来自 `unittest/npuir/test_vec_pad.py`（简化）：
@@ -54,17 +58,17 @@ def main(
         by_ = cid % n_num
         by = by_ * block_N
 
-        A_VEC = T.alloc_ub((block_M, block_N), src_dtype)
-        B_VEC = T.alloc_ub((2 * block_M, block_N), dst_dtype)
-        C_VEC = T.alloc_ub((block_M + 2 * m_num * n_num, block_N), dst_dtype)
+        A_VEC = T.alloc_shared((block_M, block_N), src_dtype)
+        B_VEC = T.alloc_shared((2 * block_M, block_N), dst_dtype)
+        C_VEC = T.alloc_shared((block_M + 2 * m_num * n_num, block_N), dst_dtype)
 
         T.copy(A[bx, by], A_VEC)
 
-        # 1）在第 0 维两端各 pad block_M/2 行，pad_value = 0.0
-        T.pad(A_VEC, B_VEC, 0.0, [block_M // 2, 0], [block_M // 2, 0])
+        # 1）在第 0 维两端各 pad block_M/2 行，pad_value 用类型化常量（与数据 dtype 一致）
+        T.pad(A_VEC, B_VEC, T.float16(0), [block_M // 2, 0], [block_M // 2, 0])
 
         # 2）在第 0 维前后各 pad cid 行，作为示例
-        T.pad(A_VEC, C_VEC, 0.0, [cid, 0], [cid, 0])
+        T.pad(A_VEC, C_VEC, T.float16(0), [cid, 0], [cid, 0])
 
         T.copy(B_VEC, B[2 * bx, by])
         T.copy(C_VEC, C[bx, by])

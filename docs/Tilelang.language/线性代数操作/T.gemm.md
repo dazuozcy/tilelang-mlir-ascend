@@ -15,9 +15,9 @@ T.npuir_dot(src1, src2, dst, size=[], initC=False, a_transpose=False, b_transpos
 
 | 参数名  | 类型  | 说明  |
 | ------------ | ------------ | ------------ |
-| `src1` | `tensor`| 输入tensor, `fp16` 或 `int8`  |
-| `src2` | `tensor`| 输入tensor, `fp16` 或 `int8` |
-| `dst` | `tensor` | 输出tensor, 对应 `fp32`（fp16输入）或 `int32`（int8输入） |
+| `src1` | `tensor`| 输入tensor, `fp16`、`bf16`、`int8` 或 `fp32`（HF32 路径），dtype 支持见 2.2.1 |
+| `src2` | `tensor`| 输入tensor, `fp16`、`bf16`、`int8` 或 `fp32`（HF32 路径），dtype 支持见 2.2.1 |
+| `dst` | `tensor` | 输出tensor, 对应 `fp32`（fp16/bf16/fp32输入）或 `int32`（int8输入） |
 |`size`|`shape`|如果size=[a, b, c], 则 `src1`的shape为[a, b]或[b, a], `src2`的shape为[b, c]或[c, b], `dst`的shape为[a, c]|
 | `initC` | `bool` | 是否对dst清零。`initC`=True表示dst=src1@src2; `initC`=False表示dst=src1@src2+dst|
 | `a_transpose` | `bool` |是否对src1进行转置 |
@@ -29,7 +29,7 @@ T.npuir_dot(src1, src2, dst, size=[], initC=False, a_transpose=False, b_transpos
 
 |   | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ | ------------ |
-| Ascend | ×  | √ |  × |  × | ×  | √  | ×  | ×  | √  | √ |  ×  | ×  |
+| Ascend | ×  | √ |  × |  × | ×  | ×  | ×  | ×  | √  | √ |  √  | ×  |
 
 #### 2.2.2 Shape支持
 
@@ -40,6 +40,9 @@ T.npuir_dot(src1, src2, dst, size=[], initC=False, a_transpose=False, b_transpos
 - `fp16 x fp16` 场景中，`dst`/累加类型必须设置为 `fp32`。
 - 若错误设置为 `fp16`，可能导致运行时卡死。
 - `int8 x int8` 场景中，`dst`/累加类型应设置为 `int32`。
+- `bf16 x bf16` 场景中，`dst`/累加类型建议设置为 `fp32`（实测可用）。
+- `fp32 x fp32` 输入走 HF32 路径，实测可用。
+- **不支持 `int32 x int32` 输入**：可通过编译，但会触发运行时内核死锁（超时杀进程）。
 
 ### 2.4 使用方法
 

@@ -25,7 +25,7 @@ T.vclamp(src, dst, min_val, max_val)
 
 |   | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| Ascend | × | × | × | × | × | × | × | × | √ | √ | × | × |
+| Ascend | × | × | × | √ | × | √ | × | √ | √ | √ | × | × |
 
 #### 2.2.2 Shape支持
 

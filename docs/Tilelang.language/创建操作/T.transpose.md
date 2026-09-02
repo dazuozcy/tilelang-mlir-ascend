@@ -17,7 +17,7 @@ T.transpose(src, dst, permutation, size=[])
 | `src` | `tensor` | 输入Tensor |
 | `dst`  | `tensor` | 输出Tensor |
 | `permutation`  | `list` | 维度排列序列 |
-| `size`  | `list` | 可选参数，手动指定shape |
+| `size`  | `list` | 可选参数，手动指定shape。注意：当前实现传入 `size` 即触发 `IndexError: list assignment index out of range`，暂不可用，请保持默认空列表 |
 
 ### 2.2 支持规格
 
@@ -25,7 +25,7 @@ T.transpose(src, dst, permutation, size=[])
 
 |   | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| Ascend | × | × | × | × | × | × | × | × | √ | √ | × | × |
+| Ascend | × | √ | × | √ | × | √ | √ | √ | √ | √ | √ | × |
 
 #### 2.2.2 Shape支持
 

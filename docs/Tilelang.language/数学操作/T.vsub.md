@@ -24,7 +24,7 @@ T.vsub(src0, src1, dst)
 
 |        | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | ------ | ----- | ---- | ------ | ----- | ------ | ----- | ------ | ----- | ---- | ---- | ---- | --------- |
-| Ascend | ×     | ×    | ×      | ×     | ×      | ×     | ×      | ×     | √    | √    | ×    | ×         |
+| Ascend | ×     | ×    | ×      | √     | ×      | √     | ×      | √     | √    | √    | ×    | ×         |
 
 #### 2.2.2 Shape支持
 
@@ -89,12 +89,12 @@ def softmax_sub_kernel(M, N, dtype):
             x_ub = T.alloc_shared((1, N), dtype)
             max_ub = T.alloc_shared((1, 1), dtype)
 
-            T.copy(X[row_id, 0], x_ub[0, 0], [1, N])
+            T.copy(X[row_id, 0:N], x_ub[0:1, 0:N])
 
-            T.vreduce(x_ub, max_ub, dims=[1], reduce_mode="max")
+            T.reduce(x_ub, max_ub, dims=[1], reduce_mode="max")
             T.vsub(x_ub, max_ub, x_ub)
 
-            T.copy(x_ub[0, 0], Y[row_id, 0], [1, N])
+            T.copy(x_ub[0:1, 0:N], Y[row_id, 0:N])
 
     return main
 ```

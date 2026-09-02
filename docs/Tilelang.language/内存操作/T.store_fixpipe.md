@@ -23,7 +23,7 @@ T.store_fixpipe(src, dst, size=[], enable_nz2nd=False, channel_split=False, pre_
 
 约束：
 
-- `src` 和 `dst` 应具有相同的数据类型。
+- `src` 和 `dst` 的数据类型仅允许以下四种组合：同 dtype、`f32→f16`（量-化）、`f32→bf16`（量化）、`i32→i8`（反量化）。
 - 在 `src` 和 `dst` 维数不一致的情况下 `size` 参数会对齐最后的维度
 - `pre_relu_mode` 参数候选列表如下：`"", "relu", "leaky_relu", "prelu"` ，其中默认值 `""` 代表不应用 `relu` 。
 
@@ -33,7 +33,9 @@ T.store_fixpipe(src, dst, size=[], enable_nz2nd=False, channel_split=False, pre_
 
 |              | int8 | int16 | int32 | uint8 | uint16 | uint32 | uint64 | int64 | fp16 | fp32 | fp64 | bf16 | bool |
 |:-------------|:----:|:-----:|:-----:|:-----:|:------:|:------:|:------:|:-----:|:----:|:----:|:----:|:----:|:----:|
-| Ascend A2/A3 |  ×   |   ×   |   ×   |   ×   |   ×    |   ×    |   ×    |   ×   |  ×   |  √   |  ×   |  ×   |  ×   |
+| Ascend A2/A3 |  √   |   ×   |   √   |   ×   |   ×    |   ×    |   ×    |   ×   |  √   |  √   |  ×   |  √   |  ×   |
+
+注：表中 `fp32` / `int32` 指 L0C `src` 侧类型；`fp16` / `bf16` / `int8` 作为 `dst` 侧类型时走量化/反量化路径，合法配对见 2.1 约束。
 
 #### 2.2.2 Shape 支持
 
@@ -42,7 +44,8 @@ T.store_fixpipe(src, dst, size=[], enable_nz2nd=False, channel_split=False, pre_
 
 ### 2.3 特殊限制说明
 
-无
+- `src`/`dst` dtype 不满足 2.1 中的四种合法组合时，触发前端断言 `Unexpected pre-quant mode in npuir_store_fixpipe`
+- `f32→f16` 量化路径实测数值正确
 
 ### 2.4 使用方法
 

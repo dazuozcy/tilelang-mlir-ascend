@@ -54,9 +54,9 @@ def concat(M, N, block_M, block_N, dtype="float16"):
             bx = bx_ * block_M
             by_ = cid % n_num
             by = by_ * block_N
-            A_VEC = T.alloc_ub((block_M, block_N), dtype)
-            B_VEC = T.alloc_ub((block_M, block_N), dtype)
-            C_VEC = T.alloc_ub((block_M, 2 * block_N), dtype)
+            A_VEC = T.alloc_shared((block_M, block_N), dtype)
+            B_VEC = T.alloc_shared((block_M, block_N), dtype)
+            C_VEC = T.alloc_shared((block_M, 2 * block_N), dtype)
             for i in T.serial(T.ceildiv(m_num * n_num, BLOCK_SIZE)):
                 block_id_base = i * BLOCK_SIZE
                 block_id = block_id_base + cid

@@ -26,21 +26,25 @@ T.vxor(src0, src1, dst)
 
 |              | int8 | int16 | int32 | uint8 | uint16 | uint32 | uint64 | int64 | fp16 | fp32 | fp64 | bf16 | bool |
 |:-------------|:----:|:-----:|:-----:|:-----:|:------:|:------:|:------:|:-----:|:----:|:----:|:----:|:----:|:----:|
-| Ascend A2/A3 |  ×   |   ×   |   √   |   ×   |   ×    |   ×    |   ×    |   ×   |  ×   |  ×   |  ×   |  ×   |  ×   |
+| Ascend A2/A3 |  √   |   √   |   √   |   √   |   √    |   √    |   √    |   √   |  ×   |  ×   |  ×   |  ×   |  ×   |
 
-​**规范使用场景是整型和 bool 类型的按位 XOR**​，其它 dtype 为实现细节，不作为公开承诺。
+**规范使用场景是整型类型的按位 XOR**（浮点类型不可用，底层 VXorOp 不支持；bool 的限制见 2.3 特殊限制说明）。
 
 #### 2.2.2 Shape 支持
 
 仅支持 1-5D tensor
 
-### 2.3 使用方法
+### 2.3 特殊限制说明
+
+bool（i1）类型无法 load/store GM，不可作为输入/输出直接落盘，仅可作为片上中间结果使用
+
+### 2.4 使用方法
 
 以下示例实现了计算输入张量`input1`, `input2` 中逐元素按位异或运算并输出到张量`output`中：
 
 ```python
 @tilelang.jit(target="npuir")
-def vec_exp(M, N, block_M, block_N, dtype="float16"):
+def vec_exp(M, N, block_M, block_N, dtype="int32"):
     m_num = M // block_M
     n_num = N // block_N
 

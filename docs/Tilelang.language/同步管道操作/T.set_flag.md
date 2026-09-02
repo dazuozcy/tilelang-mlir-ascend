@@ -30,7 +30,7 @@ with T.Scope(this):
 
 ### 2.2 特殊限制说明
 
-- 仅支持在 `T.Scope()` 上下文管理器中调用该接口
+仅支持在 `T.rs(pipe)`（ResourceSpecialize frame）上下文中调用该接口
 
 ### 2.3 使用方法
 

@@ -23,7 +23,7 @@ T.atomic_add(dst, src)
 
 |        | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | -------- | ------- | ------ | -------- | ------- | -------- | ------- | -------- | ------- | ------ | ------ | ------ | ----------- |
-| Ascend | ×    | ×   | ×     | ×    | ×     | ×    | ×     | ×    | √   | √   | ×   | ×        |
+| Ascend | ×    | √   | ×     | √    | ×     | √    | ×     | √    | √   | √   | √   | ×        |
 
 #### 2.2.2 Shape支持
 
@@ -60,7 +60,7 @@ def vec_atomic_add_2d(M, N, block_M, block_N, dtype="float32"):
             tile_size_M = T.min(block_M, t0)
             t0 = shape_N - by
             tile_size_N = T.min(block_N, t0)
-            T.copy(A[bx, by], A_VEC, [tile_size_M, tile_size_N])
+            T.copy(A[bx, by], A_VEC, size=[tile_size_M, tile_size_N])
             T.atomic_add(B[bx, by], A_VEC, [tile_size_M, tile_size_N])
 
     return vecAtomicAdd2D

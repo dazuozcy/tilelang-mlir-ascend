@@ -32,7 +32,7 @@ T.print(obj, msg, hex)
 
 ### 2.3 特殊限制说明
 
-无
+`obj` 为 buffer 时仅支持 UB（`shared`）/ L1（`shared.dyn`）/ GM（`global`）上的 buffer；L0C/L0A/L0B 上的 buffer 不支持（报错 `ValueError: Unexpected buffer scope: wmma.accumulator. Supported scopes are share, share.dyn and global.`）
 
 ### 2.4 使用方法
 

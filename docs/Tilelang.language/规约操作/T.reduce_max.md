@@ -12,21 +12,21 @@ T.reduce_max(buffer, out, dim=-1, size=[], clear=True)
 
 ### 2.1 参数说明
 
-| 参数名 | 类型 | 说明 |
-| - | - | - |
-| `buffer` | `tensor` | 输入Tensor |
-| `out`  | `tensor` | 输出Tensor |
-| `dim`  | `int` | 可选，需要进行归约的维度索引 |
-| `size`  | `list` | 可选，手动指定Shape |
-| `clear`  | `bool` | 可选，是否在归约前清空输出 |
+| 参数名     | 类型       | 说明                         |
+| ---------- | ---------- | ---------------------------- |
+| `buffer` | `tensor` | 输入Tensor                   |
+| `out`    | `tensor` | 输出Tensor                   |
+| `dim`    | `int`    | 可选，需要进行归约的维度索引 |
+| `size`   | `list`   | 可选，手动指定Shape          |
+| `clear`  | `bool`   | 可选，是否在归约前清空输出   |
 
 ### 2.2 支持规格
 
 #### 2.2.1 DataType支持
 
-|   | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
-| - | - | - | - | - | - | - | - | - | - | - | - | - |
-| Ascend | × | × | × | × | × | × | × | × | √ | √ | × | × |
+|        | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
+| ------ | ----- | ---- | ------ | ----- | ------ | ----- | ------ | ----- | ---- | ---- | ---- | --------- |
+| Ascend | ×    | ×   | √     | √    | √     | √    | √     | √    | √   | √   | ×   | ×        |
 
 #### 2.2.2 Shape支持
 
@@ -55,7 +55,8 @@ def reduce_max_kernel(M, N, dtype, accum_dtype):
             s = T.alloc_shared((M, 1), accum_dtype)
 
             T.copy(B, b)
-            T.reduce_max(b, s, dim=1, clear=False)
+            # s 未初始化，此处必须 clear=True（clear=False 会在未初始化内存上累加）
+            T.reduce_max(b, s, dim=1, clear=True)
             T.copy(s, O)
 
     return main

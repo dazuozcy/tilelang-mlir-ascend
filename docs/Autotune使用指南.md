@@ -61,9 +61,9 @@ def supply_prog(params, config):
     return [
         torch.randn(M, K).half().npu(),
         torch.randn(K, N).half().npu(),
-	# when use workspace with config:
-	# torch.randn(M, config["K_L1"]).half().npu(),
-    ]   
+    # when use workspace with config:
+    # torch.randn(M, config["K_L1"]).half().npu(),
+    ]
 
 ```
 
@@ -118,7 +118,7 @@ def get_config() -> list[dict]:
         in_dtype="float16",
         accum_dtype="float16",
         out_dtype="float16",
-	custom_mem_mul = 1,
+    custom_mem_mul = 1,
     ).with_arch(arch)
 
     hints = carver_template.recommend_hints(topk=20)
@@ -231,7 +231,7 @@ from tilelang.anneal.policy import AnnealTemplate
 
 def get_config() -> list[dict]:
     numel_in_dtype = get_byte_per_numel("float16")
-    numel_accum_dtype = get_byte_per_numel("float32") 
+    numel_accum_dtype = get_byte_per_numel("float32")
     seq_kv_len = seq_len
     hidden_dim = dim
 

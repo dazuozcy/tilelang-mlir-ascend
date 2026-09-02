@@ -2442,12 +2442,21 @@ void CodeGenTileLangNPUIRDEV::VAtomicAddCodegen(const CallNode *op) {
 
 void CodeGenTileLangNPUIRDEV::VgatherCodegen(const CallNode *op) {
   tvm::tl::NpuirGather npuirop(op->args, this->vmap);
-  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
-  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
-  Value indices = GenSubviewFromRegion(npuirop.indices, npuirop.indices_range);
+  Value src = GenExtractSliceFromRegion(npuirop.src, npuirop.src_range);
+  Value dst_ori = GetVarValue(npuirop.dst);
+  Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
+  Value indices =
+      GenExtractSliceFromRegion(npuirop.indices, npuirop.indices_range);
 
-  builder.create<mlir::hivm::VGatherOp>(builder.getUnknownLoc(), TypeRange{},
-                                        src, indices, dst);
+  mlir::Type dstType = dst.getType();
+  auto gatherOp = builder.create<mlir::hivm::VGatherOp>(
+      builder.getUnknownLoc(), mlir::TypeRange{dstType}, src, indices, dst);
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(gatherOp->getResult(0),
+                                                  dst_ori, npuirop.dst_range)
+                      : gatherOp->getResult(0);
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::VtransposeCodegen(const CallNode *op) {
@@ -2474,24 +2483,39 @@ void CodeGenTileLangNPUIRDEV::VinterleaveCodegen(const CallNode *op) {
   llvm::SmallVector<Value> srcs;
   size_t n_srcs = npuirop.srcs.size();
   for (size_t i = 0; i < n_srcs; i++) {
-    Value src = GenSubviewFromRegion(npuirop.srcs[i], npuirop.srcs_range[i]);
+    Value src =
+        GenExtractSliceFromRegion(npuirop.srcs[i], npuirop.srcs_range[i]);
     srcs.push_back(src);
   }
   mlir::ValueRange srcs_vr(srcs);
-  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
-  builder.create<mlir::hivm::VInterleaveOp>(
-      builder.getUnknownLoc(), TypeRange{}, srcs_vr, dst,
+  Value dst_ori = GetVarValue(npuirop.dst);
+  Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
+  mlir::Type dstType = dst.getType();
+  auto interleaveOp = builder.create<mlir::hivm::VInterleaveOp>(
+      builder.getUnknownLoc(), mlir::TypeRange{dstType}, srcs_vr, dst,
       static_cast<int64_t>(npuirop.channel_nums));
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(interleaveOp->getResult(0),
+                                                  dst_ori, npuirop.dst_range)
+                      : interleaveOp->getResult(0);
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::VdeinterleaveCodegen(const CallNode *op) {
   tvm::tl::NpuirDeinterleave npuirop(op->args, this->vmap);
-  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
+  Value src = GenExtractSliceFromRegion(npuirop.src, npuirop.src_range);
   llvm::SmallVector<Value> dsts;
+  llvm::SmallVector<Value> dst_oris;
+  llvm::SmallVector<mlir::Type> result_types;
   size_t n_dsts = npuirop.dsts.size();
   for (size_t i = 0; i < n_dsts; i++) {
-    Value dst = GenSubviewFromRegion(npuirop.dsts[i], npuirop.dsts_range[i]);
+    Value dst_ori = GetVarValue(npuirop.dsts[i]);
+    Value dst =
+        GenExtractSliceFromRegion(npuirop.dsts[i], npuirop.dsts_range[i]);
+    dst_oris.push_back(dst_ori);
     dsts.push_back(dst);
+    result_types.push_back(dst.getType());
   }
   mlir::ValueRange dsts_vr(dsts);
   auto channel_nums = mlir::IntegerAttr::get(
@@ -2499,9 +2523,17 @@ void CodeGenTileLangNPUIRDEV::VdeinterleaveCodegen(const CallNode *op) {
   mlir::hivm::DeinterleaveModeAttr index_mode =
       mlir::hivm::DeinterleaveModeAttr::get(
           &context, NPUIR_STR_DEINTERLEAVEMODE[npuirop.index_mode]);
-  builder.create<mlir::hivm::VDeinterleaveOp>(builder.getUnknownLoc(),
-                                              TypeRange{}, src, dsts_vr,
-                                              channel_nums, index_mode);
+  auto deinterleaveOp = builder.create<mlir::hivm::VDeinterleaveOp>(
+      builder.getUnknownLoc(), mlir::TypeRange(result_types), src, dsts_vr,
+      channel_nums, index_mode);
+  for (size_t i = 0; i < n_dsts; i++) {
+    mlir::Value result =
+        (dsts[i] != dst_oris[i])
+            ? ReshapeCastAndInsertSlice(deinterleaveOp->getResult(i),
+                                        dst_oris[i], npuirop.dsts_range[i])
+            : deinterleaveOp->getResult(i);
+    SetVarValue(npuirop.dsts[i], result);
+  }
 }
 
 /// Generate hivm.hir.varange for tl.npuir_arange.
@@ -2537,19 +2569,30 @@ void CodeGenTileLangNPUIRDEV::VconcatCodegen(const CallNode *op) {
   llvm::SmallVector<Value> srcs;
   size_t n_srcs = npuirop.srcs.size();
   for (size_t i = 0; i < n_srcs; i++) {
-    Value src = GenSubviewFromRegion(npuirop.srcs[i], npuirop.srcs_range[i]);
+    Value src =
+        GenExtractSliceFromRegion(npuirop.srcs[i], npuirop.srcs_range[i]);
     srcs.push_back(src);
   }
   mlir::ValueRange srcs_vr(srcs);
-  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
-  builder.create<mlir::hivm::VConcatOp>(builder.getUnknownLoc(), TypeRange{},
-                                        dim, srcs_vr, dst);
+  Value dst_ori = GetVarValue(npuirop.dst);
+  Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
+  mlir::Type dstType = dst.getType();
+  auto concatOp = builder.create<mlir::hivm::VConcatOp>(
+      builder.getUnknownLoc(), mlir::TypeRange{dstType}, dim, srcs_vr, dst);
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(concatOp->getResult(0),
+                                                  dst_ori, npuirop.dst_range)
+                      : concatOp->getResult(0);
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::VpadCodegen(const CallNode *op) {
   tvm::tl::NpuirPad npuirop(op->args, this->vmap);
-  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
-  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
+  Value src = GenExtractSliceFromRegion(npuirop.src, npuirop.src_range);
+  Value dst_ori = GetVarValue(npuirop.dst);
+  Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
   Value pad_value = MakeValue(npuirop.pad_value);
   llvm::SmallVector<Value> low;
   llvm::SmallVector<Value> high;
@@ -2567,18 +2610,33 @@ void CodeGenTileLangNPUIRDEV::VpadCodegen(const CallNode *op) {
   if (!high.empty()) {
     npuirop.s_high[npuirop.pad_dim] = ShapedType::kDynamic;
   }
-  builder.create<mlir::hivm::VPadOp>(
-      builder.getUnknownLoc(), TypeRange{}, src, dst, pad_value, low, high,
-      builder.getDenseI64ArrayAttr(npuirop.s_low),
+  mlir::Type dstType = dst.getType();
+  auto padOp = builder.create<mlir::hivm::VPadOp>(
+      builder.getUnknownLoc(), mlir::TypeRange{dstType}, src, dst, pad_value,
+      low, high, builder.getDenseI64ArrayAttr(npuirop.s_low),
       builder.getDenseI64ArrayAttr(npuirop.s_high));
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(padOp->getResult(0), dst_ori,
+                                                  npuirop.dst_range)
+                      : padOp->getResult(0);
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::VflipCodegen(const CallNode *op) {
   tvm::tl::NpuirFlip npuirop(op->args, this->vmap);
-  Value src = GenSubviewFromRegion(npuirop.src, npuirop.src_range);
-  Value dst = GenSubviewFromRegion(npuirop.dst, npuirop.dst_range);
-  builder.create<mlir::hivm::VFlipOp>(builder.getUnknownLoc(), TypeRange{}, src,
-                                      dst, npuirop.axis);
+  Value src = GenExtractSliceFromRegion(npuirop.src, npuirop.src_range);
+  Value dst_ori = GetVarValue(npuirop.dst);
+  Value dst = GenExtractSliceFromRegion(npuirop.dst, npuirop.dst_range);
+  bool needInsertSlice = (dst != dst_ori);
+  mlir::Type dstType = dst.getType();
+  auto flipOp = builder.create<mlir::hivm::VFlipOp>(builder.getUnknownLoc(),
+                                                    mlir::TypeRange{dstType},
+                                                    src, dst, npuirop.axis);
+  mlir::Value result =
+      needInsertSlice ? ReshapeCastAndInsertSlice(flipOp->getResult(0), dst_ori,
+                                                  npuirop.dst_range)
+                      : flipOp->getResult(0);
+  SetVarValue(npuirop.dst, result);
 }
 
 void CodeGenTileLangNPUIRDEV::Nd2NzCodegen(const CallNode *op) {

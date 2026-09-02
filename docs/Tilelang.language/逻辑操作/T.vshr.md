@@ -15,7 +15,7 @@ T.vshr(A, B, C)
 | 参数名  | 类型  | 说明  |
 | ------------ | ------------ | ------------ |
 | `A` | `tensor` | 输入tensor  |
-| `B` | `tensor`, `scalar` | 输入tensor  |
+| `B` | `tensor` | 移位位数tensor（shape 约束见 2.2.2）  |
 | `C` | `tensor` | 输出tensor  |
 
 ### 2.2 支持规格
@@ -31,7 +31,7 @@ T.vshr(A, B, C)
 结论：
 
 1. `C`: shape必须和`A`一致
-2. `B`: shape必须和`A`一致或为标量
+2. `B`: shape必须和`A`一致，或为 `(1,)` 的 tensor（标量暂不支持）
 
 ### 2.3 特殊限制说明
 
@@ -66,10 +66,11 @@ def vshr_kernel(M, N, dtype):
     return main
 ```
 
-示例2：B是标量
+示例2：B是shape为(1,)的tensor（承载常量移位位数）
 
 ```python
-def vshr_kernel(M, N):
+@tilelang.jit(target="npuir")
+def vshr_kernel(M, N, dtype="int32"):
     BLOCK_SIZE=1
 
     @T.prim_func
@@ -85,7 +86,7 @@ def vshr_kernel(M, N):
 
             T.copy(A, acc_A)
             T.copy(B, acc_B)
-            T.shr(acc_A, acc_B, out_ub)
+            T.vshr(acc_A, acc_B, out_ub)
             T.copy(out_ub, Out)
 
     return main

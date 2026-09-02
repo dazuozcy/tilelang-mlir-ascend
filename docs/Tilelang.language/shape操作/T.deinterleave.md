@@ -24,7 +24,7 @@ T.deinterleave(src, *dsts, channel_nums=2, index_mode="ALL_CHANNELS", size=[])
 
 - `src` 和 `*dsts` 应具有相同的数据类型
 - `src` 的最后一维必须能被 `channel_nums` 整除
-- `index_mode` 参数候选列表如下： `"CHANNEL_0", "CHANNEL_1", "ALL_CHANNELS"`
+- `index_mode` 参数候选列表如下： `"CHANNEL_0", "CHANNEL_1",  "ALL_CHANNELS"`
 
 ### 2.2 OP 规格
 
@@ -32,7 +32,7 @@ T.deinterleave(src, *dsts, channel_nums=2, index_mode="ALL_CHANNELS", size=[])
 
 |              | int8 | int16 | int32 | uint8 | uint16 | uint32 | uint64 | int64 | fp16 | fp32 | fp64 | bf16 | bool |
 |:-------------|:----:|:-----:|:-----:|:-----:|:------:|:------:|:------:|:-----:|:----:|:----:|:----:|:----:|:----:|
-| Ascend A2/A3 |  ×   |   ×   |   ×   |   ×   |   ×    |   ×    |   ×    |   ×   |  √   |  √   |  ×   |  ×   |  ×   |
+| Ascend A2/A3 |  √   |   √   |   √   |   ×   |   √    |   √    |   √    |   √   |  √   |  √   |  ×   |  √   |  ×   |
 
 #### 2.2.2 Shape 支持
 
@@ -62,9 +62,9 @@ def deinterleave_c2(M, N, block_M, dtype="float16"):
         with T.Kernel(m_num, is_npu=True) as (cid, _):
             offset = cid * block_M
 
-            ub_input = T.alloc_ub((block_M, N), dtype)
-            ub_output0 = T.alloc_ub((block_M, N_half), dtype)
-            ub_output1 = T.alloc_ub((block_M, N_half), dtype)
+            ub_input = T.alloc_shared((block_M, N), dtype)
+            ub_output0 = T.alloc_shared((block_M, N_half), dtype)
+            ub_output1 = T.alloc_shared((block_M, N_half), dtype)
 
             T.copy(Input[offset : offset + block_M, :], ub_input)
             T.deinterleave(ub_input, ub_output0, ub_output1, channel_nums=2)

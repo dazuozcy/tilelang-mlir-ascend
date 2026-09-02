@@ -10,47 +10,45 @@ import tilelang.language as T
 from testcommon import assert_close, gen_tensor
 
 pytestmark = [
-    pytest.mark.op("pad"),
+    pytest.mark.op("flip"),
     pytest.mark.mode("Expert"),
 ]
 
 DTYPES = ["float16"]
 
 
-def vec_pad_exp(block_M, block_N, dtype="float16"):
+def vec_flip_exp(block_M, block_N, flip_axis, dtype="float16"):
     BLOCK_SIZE = 1
 
     @T.prim_func
-    def slicePadExp(
+    def sliceFlipExp(
         A: T.Tensor((block_M, block_N), dtype),
-        C: T.Tensor((2 * block_M, block_N), dtype),
+        B: T.Tensor((block_M, block_N), dtype),
     ):
         with T.Kernel(BLOCK_SIZE, is_npu=True) as (cid, _):
             A_VEC = T.alloc_ub((block_M, block_N), dtype)
-            C_VEC = T.alloc_ub((2 * block_M, block_N), dtype)
+            B_VEC = T.alloc_ub((block_M, block_N), dtype)
             T.copy(A, A_VEC)
-            T.npuir_pad(
+            T.npuir_flip(
                 A_VEC[:block_M, :block_N],
-                C_VEC,
-                T.float16(0),
-                [block_M // 2, 0],
-                [block_M // 2, 0],
+                B_VEC[:block_M, :block_N],
+                flip_axis,
             )
-            T.copy(C_VEC, C)
+            T.copy(B_VEC, B)
 
-    return slicePadExp
+    return sliceFlipExp
 
 
 @pytest.mark.parametrize("dtype", DTYPES)
-def test_vec_pad_exp(dtype):
+def test_vec_flip_exp(dtype):
     M, N = 32, 32
     torch.manual_seed(42)
     A = gen_tensor((M, N), dtype, kind="randn")
-    C = gen_tensor((2 * M, N), dtype, kind="zeros")
-    ref_C = torch.nn.functional.pad(A.cpu(), (0, 0, 16, 16), mode="constant", value=0)
+    B = gen_tensor((M, N), dtype, kind="zeros")
+    ref_B = torch.flip(A.cpu(), [1])
 
-    func = vec_pad_exp(32, 32)
+    func = vec_flip_exp(32, 32, flip_axis=1)
     compiled = tilelang.compile(func, target="npuir")
-    compiled(A, C)
+    compiled(A, B)
 
-    assert_close(C.cpu(), ref_C, dtype=dtype, rtol=1e-2, atol=1e-2)
+    assert_close(B.cpu(), ref_B, dtype=dtype, rtol=1e-2, atol=1e-2)

@@ -2,7 +2,7 @@
 
 ## 1. OP概述
 
-简介：`tilelang.language.atomic_addx4` 在 NPU 上执行四宽度操作数的原子加法（atomic add）操作
+简介：`tilelang.language.atomic_addx4` 为原子加法操作的历史兼容接口。**当前实现与 `T.atomic_add` 完全等价**（生成相同的 `tl.npuir_atomic_add` TIR），x4 专用硬件语义暂未接入，调用形式保留仅为兼容既有代码。
 
 ```markup
 T.atomic_addx4(dst, src, size=[])
@@ -32,7 +32,7 @@ T.atomic_addx4(dst, src, size=[])
 
 ### 2.3 特殊限制说明
 
-无
+与 `T.atomic_add` 的等价关系及 x4 语义现状见 1. OP 概述
 
 ### 2.4 使用方法
 
@@ -60,7 +60,7 @@ def run_atomic_addx4(M, N, block_M, block_N, dtype="float32"):
                 bx = blockx * block_M + i
                 by = blocky * block_N + j * 4
 
-                T.copy(A[bx, by], A_VEC, [1, 4])
+                T.copy(A[bx, by], A_VEC, size=[1, 4])
                 T.atomic_addx4(B[bx, by], A_VEC, [1, 4])
 
     return atomicAddx4Program

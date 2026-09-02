@@ -22,13 +22,17 @@ T.flip(src, dst, axis: int)
 
 |              | int8 | int16 | int32 | uint8 | uint16 | uint32 | uint64 | int64 | fp16 | fp32 | fp64 | bf16 | bool |
 | :----------- | :--: | :---: | :---: | :---: | :----: | :----: | :----: | :---: | :--: | :--: | :--: | :--: | :--: |
-| Ascend A2/A3 |   ×   |    ×   |    ×  |    ×   |   ×    |   ×    |   ×    |    ×  |  √   |  √   |  ×   |  ×  |   ×  |
+| Ascend A2/A3 |   √   |    √   |    √  |    √   |   √    |   √    |   √    |    √  |  √   |  √   |  ×   |  √  |   ×  |
 
 ### 2.3 Shape支持
 
 仅支持 1~5 维 tensor
 
-### 2.4 使用方法
+### 2.4 特殊限制说明
+
+无
+
+### 2.5 使用方法
 
 ```python
 @tilelang.jit(target="npuir")
@@ -41,8 +45,8 @@ def vec_flip(block_M, block_N, dtype="float16"):
         C: T.Tensor((block_M, block_N), dtype),
     ):
         with T.Kernel(BLOCK_SIZE, is_npu=True) as (cid, _):
-            A_VEC = T.alloc_ub((block_M, block_N), dtype)
-            C_VEC = T.alloc_ub((block_M, block_N), dtype)
+            A_VEC = T.alloc_shared((block_M, block_N), dtype)
+            C_VEC = T.alloc_shared((block_M, block_N), dtype)
 
             T.copy(A, A_VEC)
             T.flip(A_VEC[:block_M, :block_N], C_VEC[:block_M, :block_N], 1)
@@ -53,4 +57,4 @@ def vec_flip(block_M, block_N, dtype="float16"):
 
 ## 3. Tilelang Op到Ascend NPU IR Op的转换
 
-`tilelang::flip` Op 将被转换为 `hivm.hir.vfip` Op
+`tilelang::flip` Op 将被转换为 `hivm.hir.vflip` Op（VFlipOp）

@@ -15,14 +15,14 @@ T.reduce_sum(src, dst, dims=0, clear = False)
 
 ### 2.1 参数说明
 
-| 参数名        | 类型         | 说明                                                    |
-| ------------- | ------------ | ------------------------------------------------------- |
-| `src`         | `tensor`     | 输入tensor                                              |
-| `dst`         | `tensor`     | 输出tensor                                              |
-| `dims`        | `list/tuple` | 需要reduce的维度                                        |
-| `reduce_mode` | `str`        | reduce操作类型(`sum`、`max`、`min`、`abssum`、`absmax`) |
-| `clear`       | `bool`       | 是否在reduce前对目标张量进行初始化                      |
-| `size`        | `list`       | 控制 reduce 实际参与计算的数据范围                      |
+| 参数名          | 类型           | 说明                                                                                |
+| --------------- | -------------- | ----------------------------------------------------------------------------------- |
+| `src`         | `tensor`     | 输入tensor                                                                          |
+| `dst`         | `tensor`     | 输出tensor                                                                          |
+| `dims`        | `list/tuple` | 需要reduce的维度                                                                    |
+| `reduce_mode` | `str`        | reduce操作类型(`sum`、`max`、`min`、`abssum`、`absmax`)                   |
+| `clear`       | `bool`       | 是否在reduce前对目标张量进行初始化（`clear=False` 的使用约束见 2.3 特殊限制说明） |
+| `size`        | `list`       | 控制 reduce 实际参与计算的数据范围                                                  |
 
 ### 2.2 支持规格
 
@@ -30,7 +30,7 @@ T.reduce_sum(src, dst, dims=0, clear = False)
 
 |        | uint8 | int8 | uint16 | int16 | uint32 | int32 | uint64 | int64 | fp16 | fp32 | bf16 | bool/int1 |
 | ------ | ----- | ---- | ------ | ----- | ------ | ----- | ------ | ----- | ---- | ---- | ---- | --------- |
-| Ascend | ×    | ×   | ×     | ×    | ×     | ×    | ×     | ×    | √   | √   | ×   | ×        |
+| Ascend | ×    | ×   | √     | √    | √     | √    | √     | √    | √   | √   | ×   | ×        |
 
 #### 2.2.2 Shape支持
 
@@ -44,7 +44,11 @@ T.reduce_sum(src, dst, dims=0, clear = False)
    src: (M, N, K) → dst: (M, N, K)（无维度为 1，无法reduce）
    src: (M, N, K) → dst: (M, 1, L)（两个维度不同，违反“仅一个维度不同”）
 
-### 2.3 使用方法
+### 2.3 特殊限制说明
+
+`clear=False` 表示在 dst 现有值上累加，调用方必须先初始化 dst（例如先用 `T.reduce_abssum` 等写入初始值）；对未初始化 buffer 使用 `clear=False` 不会报错，但会产生静默数值错误
+
+### 2.4 使用方法
 
 以下示例实现了对输入矩阵沿第 1 维执行  sum 归约，最终得到形状为 (M,1) 的结果。
 
@@ -64,7 +68,8 @@ def reduce(M, N, dtype="float16"):
             b = T.alloc_shared((M, 1), dtype)
             T.copy(A, a)
 
-            T.reduce(a, b, dims=[1], reduce_mode="sum", clear=False)
+            # b 未初始化，此处必须 clear=True（clear=False 会在未初始化内存上累加）
+            T.reduce(a, b, dims=[1], reduce_mode="sum", clear=True)
 
             T.copy(b, B)
 

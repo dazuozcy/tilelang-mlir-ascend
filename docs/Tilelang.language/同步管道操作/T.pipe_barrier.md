@@ -12,9 +12,13 @@ T.pipe_barrier(pipe)
 
 ### 2.1 参数说明
 
-| 参数名  | 类型  | 说明  |
-| ------------ | ------------ | ------------ |
+| 参数名   | 类型    | 说明                                   |
+| -------- | ------- | -------------------------------------- |
 | `pipe` | `str` | 管道类型标识符，用于指定需要同步的管道 |
+
+当前支持参数
+
+PIPE_S、PIPE_V、PIPE_M、PIPE_MTE1、PIPE_MTE2、PIPE_MTE3、PIPE_ALL、PIPE_MTE4、PIPE_MTE5、PIPE_V2、PIPE_FIX、VIRTUAL_PIPE_MTE2_L1A、VIRTUAL_PIPE_MTE2_L1B、PIPE_NUM、PIPE_UNASSIGNED
 
 ### 2.2 支持规格
 
@@ -50,11 +54,10 @@ def pipe_barrier_kernel(M, N, dtype):
 
             T.copy(src, src_ub)
 
-            T.pipe_barrier("VEC_IN")
+            # GM->UB 拷贝完成后屏障 MTE2 通路
+            T.pipe_barrier("PIPE_MTE2")
 
             T.vadd(src_ub, src_ub, dst_ub)
-
-            T.pipe_barrier("VEC_OUT")
 
             T.copy(dst_ub, dst)
 

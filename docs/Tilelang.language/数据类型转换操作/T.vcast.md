@@ -62,7 +62,7 @@ T.vcast(src, dst, round_mode) [Expert Op]
 
 ### 2.3 特殊限制说明
 
-无
+`src` 仅支持 tensor/buffer（向量），不支持标量（标量 src 触发前端断言 `The input/init operands and result have the same rank.`）
 
 ### 2.4 使用方法
 

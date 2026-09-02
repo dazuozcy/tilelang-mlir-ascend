@@ -18,7 +18,7 @@ T.Kernel(blocks, threads, is_cpu, prelude, is_npu, pipeline)
 | `threads` | `int` \| `List[int]` \| `Tuple` \| `None` | 否（GPU 有默认值） | 块内线程数。单整数表示 `blockDim.x`，列表/元组表示 `blockDim.(x,y,z)`，不足 3 维时未给出维度默认为 1。取 `-1` 表示跳过 `threadIdx.x` 绑定。非 CPU 且未传时默认为 `128`。 |
 | `is_cpu` | `bool` | 否 | 为 `True` 表示 CPU kernel，不绑定 `threadIdx.x/y/z` 和 `blockIdx.x/y/z`，索引为 for 循环变量。默认 `False`。 |
 | `prelude` | `str` \| `None` | 否 | 在生成的内核代码前注入的 C 代码（通过 `pragma_import_c` 等机制）。默认 `None`。 |
-| `is_npu` | `bool` | 否 | 为 `True` 表示 NPU kernel，使用 NPU 的 block 语义（仅 1 维 block）。默认 `False`。 |
+| `is_npu` | `bool` | 否 | 为 `True` 表示 NPU kernel，使用 NPU 的 block 语义（最多 2 维 block）。默认 `False`。 |
 | `pipeline` | `bool` | 否 | 流水线相关开关，当前在 Python 层仅传入 attrs，具体语义由后端使用。默认 `False`。 |
 
 ### 2.2 支持规格
@@ -42,7 +42,8 @@ T.Kernel(blocks, threads, is_cpu, prelude, is_npu, pipeline)
 
 **NPU 模式（`is_npu=True`）**
 
-- **必须有且仅有 1 个 block 维度**：`len(blocks) == 1`，否则会触发 `AssertionError: "NPU kernel must have exactly one block dimension"`。
+- **最多支持 2 个 block 维度**（`len(blocks) <= 2`）；超过 2 维会触发 `AssertionError: "NPU kernel only supports up to 2D blocks"`。2D grid 完全合法（官方测试 `testing/npuir/test_2d_grid_dev.py`）。
+- 2D grid 的解包方式为 `with T.Kernel(n0, n1, is_npu=True) as (bx, by, _):`。
 - 进入上下文时返回的是前 2 个 iter_var 的变量（`frames[0].iter_var.var`, `frames[1].iter_var.var`），用于 NPU 的 cube/vector 索引（`cid, vid`）。
 
 ### 2.4 使用方法
