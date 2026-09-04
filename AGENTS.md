@@ -47,6 +47,9 @@ Purpose: risk-first code review and CI-aligned format checks.
 9. tilelang-github-operations
 Purpose: npuir branch commit/rebase/PR/issue workflow.
 
+10. tilelang-skill-evolution
+Purpose: self-evolution distillation for Tilelang-Op-Conductor. Distills value points (D measured data / P patterns / R process rules / C case index) from task artifacts at task end, merges by tier governance into pattern-library or enqueues to .agents/evolution/queue.md. Invoked by tilelang-skill-evolver only.
+
 ## Trigger Guidance
 
 Use the matching skill whenever the user asks for:
@@ -55,6 +58,7 @@ Use the matching skill whenever the user asks for:
 - compile/runtime error analysis on npuir branch
 - code review, lint/format checks, PR readiness
 - commit/push/rebase/upstream sync, PR or issue workflow
+- reviewing or merging evolution proposals (.agents/evolution/queue.md), value-point distillation, self-evolution of conductor skills
 
 Developer-mode MixCV trigger rule:
 - If one kernel contains Cube-side T.gemm and Vector-side at least one v-prefix op (such as T.vadd/T.vmul/T.vexp/T.vcast/T.vbrc), treat it as MixCV and use tilelang-mixcv-skill.
@@ -66,6 +70,16 @@ For operator-writing tasks, always start from existing examples and tests:
 - First consult examples/ and testing/npuir/ for the closest existing pattern.
 - Prefer modifying an existing operator case instead of generating a brand-new kernel from scratch.
 - If no close template exists, explicitly state that and then build the minimal new kernel.
+
+## Compiler Capability Gap Rule (Mandatory)
+
+When any task stage (design algorithm research / API mapping, develop, optimize, review) concludes that current npuir capability is insufficient to implement the chosen algorithm (cannot implement / forced algorithm swap / performance ceiling):
+
+1. Identify the specific missing capability and its compiler layer (Frontend API / TileLangIR pass / BishengIR / tladapter / runtime).
+2. Record it in `.agents/evolution/capability-gaps.md`: dedupe first, then append a new entry or increment `occurrences` of the existing one, following the schema in that file.
+3. Evidence rule is identical to negative claims in Docs Auto Routing: cite concrete doc path and limiting clause, or explicitly mark as undocumented assumption with estimation basis.
+4. Escalation (compiler-level self-evolution): a gap independently identified in 2 or more different tasks becomes `recurring` and must produce a capability-fill proposal (target layer, proposed change, quantified benefit, affected operators) surfaced to the user at task end. Filing an external issue (with `[npuir]` prefix) requires user approval.
+5. Gap conclusions bind to toolchain version stamps; re-verify before reusing them after toolchain upgrades.
 
 ## Pre-PR Formatting Rule (Mandatory)
 

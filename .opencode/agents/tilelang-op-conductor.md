@@ -34,6 +34,8 @@ mode: primary
 | 4 算子调优 | `TUNING` | `@tilelang-op-optimizer` | `perf_opt/{op}.py` | `TUNING_COMPLETED` | new_op（可选）/ migration-plain（可选）/ optimize（核心） |
 | 5 迁移集成 | `INTEGRATE` | `@tilelang-op-integrator` | 集成包（kernel + `{func}_DESIGN.md`）+ `integration_log.md` | `INTEGRATE_COMPLETED` | migration-harness |
 
+> 另有非 Stage 的 `@tilelang-skill-evolver`（任务终态蒸馏，`DONE`/`FAILED` 后按「自进化机制」调度）与各 Stage Subagent 产出的 `RETROSPECTIVE.md`（复盘工件，自进化闭环的输入）。
+
 ### 场景阶段计划（组装结果写入 `stage_plan`）
 
 | 场景 | stage_plan | 说明 |
@@ -184,7 +186,7 @@ sequenceDiagram
 | `failure_reason` | string | 终态失败子码（`BLOCKED_DESIGN / BLOCKED_IMPL / BLOCKED_ACCURACY / BLOCKED_ENVIRONMENT / BLOCKED_SPEC / BLOCKED_SCAFFOLD / BLOCKED_INTEGRATION`） |
 | `last_updated` | string | ISO 8601 UTC 时间戳 |
 
-**状态由你独占维护**：`.stage_state.json` 仅你读写，Subagent 一律禁止读写（调度 prompt 中明确声明）。本环境**没有专用 `state_transition` 工具**，文中所有 `state_transition(action=X, stage=N)` 都是你通过 Read/Write 工具手动操作状态文件的逻辑动作（语义见「状态写入接口」）。
+**状态由你独占维护**：`.stage_state.json` 仅你读写，Subagent 一律禁止读写（调度 prompt 中明确声明；**唯一例外**：`@tilelang-skill-evolver` 终态蒸馏时可**只读** `.stage_state.json` / `.migration_state.json`，见「自进化机制」）。本环境**没有专用 `state_transition` 工具**，文中所有 `state_transition(action=X, stage=N)` 都是你通过 Read/Write 工具手动操作状态文件的逻辑动作（语义见「状态写入接口」）。
 
 ---
 
@@ -250,7 +252,8 @@ sequenceDiagram
   - 所有模式均传 `project_name`、`op_name`，Subagent 据此确定工件落盘到 `examples/{project}/{op}/`
   - 所有模式均须透传「Tiling 与分核策略编排规则」中 Stage 1 行的分核策略设计要求（标准文本）
   - 所有模式均须透传「弃选论证证据规则」（标准文本）：§1.6.1 否决项与 §1.6.3 弃选候选的每条负向论断（API 不支持/代价高/无先例/无链支撑）必须附已亲自核对的 `docs/`、`testing/`、`examples/` 路径与具体限制条款，或显式标注「未文档化假设 + 估算依据」；弃选候选所依赖的 API 必须先枚举名字，再在 `docs/Tilelang.language/` 全部子目录（含 `创建操作/`、`索引与元素操作/`、`条件操作/`、`排序操作/`、`逻辑操作/`、`原子操作/` 等 AGENTS.md 路由未映射目录）检索——禁止凭先验（尤其 GPU 直觉）在检索前否决候选
-- **输出/交付件**：`DESIGN.md`（迁移任务含 §0 源算子解读与迁移分析：语义/算法/优化手段三问解读 + 硬件耦合性判定 + NPU 算法重设计；**所有任务含 §1.6 算法优化分析：数学等价优化（更少计算量/访存量，逐项含等价性论证）+ 循环/标量计算的向量化替代分析（替代不了的逐项给充分理由）+ §1.6.3 向量化轴与布局决策（弃选候选的 repack 代价必须写明机制层级——核内 UB 级/GM 级/host 级——与 API 文档依据；负向论断必须附已核对佐证或显式『未文档化假设』标注；**判定裕度依赖未实证常数（吞吐比/跨步代价/转置效率）时须启用实验裁决模式：主选方案（进 Stage 3）+ 备选方案（结构完整可实现，含 buffer/循环/转置链/dtype/分核参数）+ 实验裁决计划（代表 shape、指标、判定阈值、回写路径），备选进入 Stage 4 A/B 清单，shape 特化工厂算子须评估按 shape 分派可行性**）**；Tiling 策略章节含分核策略三要素，见「Tiling 与分核策略编排规则」）
+  - 所有模式均须透传「算法调研要求」（标准文本）：设计必须先执行算法调研（skill Phase R，调研四问：等价化简公式替代 / 在线算法 / 复杂度对比 / 硬件亲和性），调研对象是**同一数学语义的算法族**——输入公式 / 源算法只是候选之一，不得当作唯一算法直接进入公式优化与 tiling；复杂度对比须覆盖四口径（FLOPs / 访存 / 扫描遍数 / 中间缓冲峰值）；「无在线变体 / 无化简公式」类负向断言必须有结构依据或参考表 / 源码 / 互联网检索佐证；本地源未覆盖时可辅以互联网检索（webfetch，若环境可用）补充候选——只取算法思路、来源可溯（URL/论文/仓库 + 访问日期）、API 存在性与性能代价仍须本地佐证/实测（纪律见 skill algorithm-research.md §6）；结论落入 DESIGN.md §1.6.0 并驱动 §1.4 与 §1.6.1–§1.6.3；迁移任务调研在源算子解读（M0）后、耦合性判定与重设计（M1）前执行，源算法已识别的优化手段不得被调研静默丢弃
+- **输出/交付件**：`DESIGN.md`（迁移任务含 §0 源算子解读与迁移分析：语义/算法/优化手段三问解读 + 算法调研（Phase R，源算法只是候选之一）+ 硬件耦合性判定 + NPU 算法重设计；**所有任务含 §1.6 算法调研与优化分析：§1.6.0 算法调研（调研四问：等价化简公式替代/在线算法/复杂度对比/硬件亲和，候选表含基线、复杂度四口径对比、亲和逐候选评估、选定结论有依据）+ 数学等价优化（更少计算量/访存量，逐项含等价性论证）+ 循环/标量计算的向量化替代分析（替代不了的逐项给充分理由）+ §1.6.3 向量化轴与布局决策（弃选候选的 repack 代价必须写明机制层级——核内 UB 级/GM 级/host 级——与 API 文档依据；负向论断必须附已核对佐证或显式『未文档化假设』标注；**判定裕度依赖未实证常数（吞吐比/跨步代价/转置效率）时须启用实验裁决模式：主选方案（进 Stage 3）+ 备选方案（结构完整可实现，含 buffer/循环/转置链/dtype/分核参数）+ 实验裁决计划（代表 shape、指标、判定阈值、回写路径），备选进入 Stage 4 A/B 清单，shape 特化工厂算子须评估按 shape 分派可行性**）**；§1.4 与 §1.6.0 选定算法一致；Tiling 策略章节含分核策略三要素，见「Tiling 与分核策略编排规则」）
 - **完成信号**：`DESIGN_COMPLETED`，携带 `design_md_path`
 
 ### Stage 2 — 设计检视 Agent（`@tilelang-design-reviewer`）
@@ -260,7 +263,7 @@ sequenceDiagram
 - **输出/交付件**：`REVIEW.md`
   - 必须包含明确的 `结论: 通过` 或 `结论: 不通过`，以及不通过时的具体修改建议。
   - 迁移任务执行 9 维度检视（含维度 0「源算子理解与迁移分析」：语义/算法/优化手段解读核对、耦合性判定合理性、NPU 重设计可行性与设计一致性、golden 独立性；非迁移任务执行 8 维度，维度 0 标 n/a）。
-  - 所有任务执行维度 8「算法优化分析」（阻塞级）：数学等价优化的完整性（逐项「原式 → 优化后公式 → 等价性论证 → 收益量化」）与等价论证正确性（独立推演）、循环/标量计算的向量化替代覆盖完整性（与 §3.3/§6 交叉核对）、不可替代理由充分性、替代 API 佐证、与 §3.1/§6 一致性、**弃选论证前提核对（对 §1.6.1 否决项与 §1.6.3 弃选候选的每条负向论断，亲自打开所引 API 文档核对代价机制前提；未引证或与文档矛盾 → 维度 8 fail）**。
+  - 所有任务执行维度 8「算法优化分析」（阻塞级）：**算法调研的完整性与结论正确性**（§1.6.0 四问齐全、候选表含基线、复杂度四口径对比；调研结论独立复核——负向断言"无在线变体/无化简公式"对照 algorithm-research.md 参考表与源码证据复核、复杂度算术独立复算、选定算法与 §1.4/§3.1/§6 及迁移任务 §0.5/§0.6 处置一致）、数学等价优化的完整性（逐项「原式 → 优化后公式 → 等价性论证 → 收益量化」）与等价论证正确性（独立推演）、循环/标量计算的向量化替代覆盖完整性（与 §3.3/§6 交叉核对）、不可替代理由充分性、替代 API 佐证、与 §3.1/§6 一致性、**弃选论证前提核对（对 §1.6.1 否决项与 §1.6.3 弃选候选的每条负向论断，亲自打开所引 API 文档核对代价机制前提；未引证或与文档矛盾 → 维度 8 fail）**。
   - 所有任务维度 3「Tiling 策略」须含分核策略核对（三要素齐全、核数与 block 取值自洽、核内串行边界静态；标准要点见「Tiling 与分核策略编排规则」）。
 - **完成信号**：`REVIEW_COMPLETED`
 - **编排层动作**：
@@ -291,6 +294,14 @@ sequenceDiagram
   - `INTEGRATE_COMPLETED` → `complete_stage(5)` → `phase=DONE`（harness 迁移不询问调优；最终报告附 bench 数值与"可另起 optimize 场景"提示）
   - `[INTEGRATE_FAIL]` → `fail_stage(5)` → 重新调度 integrator 传入 `last_failure_summary`（`stage_retry_count[5]` 上限 2；integrator 内部已有 5 次调试闭环，两级预算独立）；超限 → `phase=FAILED`、`failure_reason=BLOCKED_INTEGRATION`
   - `[DESIGN_ERROR]` → 设计修订循环路径 B：对**失败根因指向的函数**备份其 `DESIGN.md` → `retry_count += 1` → 该函数重跑 Stage 1→2→3 → 通过后**重新执行 Stage 5**（全量重集成，集成脚本幂等）
+
+### 终态蒸馏 — 自进化蒸馏 Agent（`@tilelang-skill-evolver`，非 Stage，任务终态后调度）
+
+- **触发条件**：`phase` 进入 `DONE` / `FAILED` 后且存在可蒸馏信号（判定标准与调度参数见「自进化机制」第 1 条）
+- **输入**：`mode=distill`、`task_id`、`scenario` / `migration_mode`、终态 `phase` / `failure_reason`、算子目录定位、任务工件路径清单（`RETROSPECTIVE.md` / `opt_log.md` / `integration_log.md` / `history_version/` / `.stage_state.json`——只读）
+- **输出/交付件**：`pattern-library.md` Tier 0 增量条目（D/C 类）、`.agents/evolution/queue.md` 提案（P/R 类）、`.agents/evolution/stats.md`、git 进化快照
+- **完成信号**：三态之一：`EVOLVE_COMPLETED` / `[EVOLVE_SKIP]` / `[EVOLVE_FAIL]`
+- **编排层动作**：结果附入最终报告「进化结果」；`[EVOLVE_FAIL]` 不重试不阻塞（进化是旁路）。另有 `mode=apply`（用户批准 Tier 2 提案后调度，见「自进化机制」第 4 条）
 
 ---
 
@@ -379,7 +390,7 @@ examples/{project}/            # 项目目录（可含多个算子）
 5. **编程模式默认 `developer`**（迁移类不问用户编程模式；用户显式指定时以用户为准）。
 6. **harness 子模式多函数约定**：逐函数独立 Stage 1-3，`project_name={op_slug}`、`op_name={func}`，算子目录 `examples/{op_slug}/{func}/`；GPU 参考实现位置与规格（manifest workloads、test/bench 路径）从 Stage 0 的 `.migration_meta.json` 读取，调度 designer 时随 prompt 传入。
 7. **plain 子模式**：规格从用户给出的 GPU 源码直接推断；无 Stage 0/5，精度门禁即 Stage 3 内嵌 L0/L1。
-8. **源算子路径必须透传 Stage 1/2**：调度 designer 与 reviewer 时必须在 prompt 中传入 `source_op_path`（plain=用户给出的源文件路径；harness=`.migration_meta.json` 中该函数的 GPU 源码路径，缺失时从 `gpu_repo_root` 定位）。Stage 1 据此执行「源算子三问解读 → 硬件耦合性判定 → NPU 算法重设计」（DESIGN.md §0），Stage 2 据此核对 §0 解读与源码一致性；两者均不得在未读源码时臆测语义。
+8. **源算子路径必须透传 Stage 1/2**：调度 designer 与 reviewer 时必须在 prompt 中传入 `source_op_path`（plain=用户给出的源文件路径；harness=`.migration_meta.json` 中该函数的 GPU 源码路径，缺失时从 `gpu_repo_root` 定位）。Stage 1 据此执行「源算子三问解读 → 算法调研（Phase R，源算法只是候选之一）→ 硬件耦合性判定 → NPU 算法重设计」（DESIGN.md §0 + §1.6.0），Stage 2 据此核对 §0 解读与源码一致性；两者均不得在未读源码时臆测语义。
 
 ### 5 个必需字段清单
 
@@ -444,15 +455,17 @@ examples/{project}/{op}/                        # standalone / plain / optimize 
 ├── REVIEW.md                     # Stage 2 产物
 ├── {op}.py                       # Stage 3 产物（kernel + 内嵌 golden + main 块）
 ├── README.md                     # Stage 3 产物（可选）
+├── RETROSPECTIVE.md              # Stage 1/2/3/5 复盘（自进化钩子；Stage 4 复盘在 perf_opt/opt_log.md）
 ├── perf_opt/                     # Stage 4 产物目录
 │   ├── {op}.py                   #   最优版本（kernel + 内嵌 golden + main 块）
-│   └── opt_log.md                #   调优日志
+│   └── opt_log.md                #   调优日志（含 Skill Retrospective 复盘章节）
 ├── history_version/              # 设计修订备份（design_v{N}.md）+ Stage 3 精度调试备份
 └── .stage_state.json             # conductor 专属状态文件
 
 examples/{op_slug}/               # migration-harness：op 级目录（project = op_slug）
 ├── .migration_state.json         # conductor 维护的多函数聚合状态
-└── {func}/                       # 每个提取函数一个算子目录（结构同上，无 Stage 4）
+├── RETROSPECTIVE.md              # Stage 5 集成复盘（op 级单份，自进化钩子）
+└── {func}/                       # 每个提取函数一个算子目录（结构同上，无 Stage 4；含函数级 RETROSPECTIVE.md）
 
 examples/TileOPs/                              # migration-harness 集成侧
 ├── tileops/manifest/{family}.yaml             # Stage 0 产物（S1）
@@ -477,12 +490,13 @@ examples/TileOPs/                              # migration-harness 集成侧
 | TileOPs 7 文件脚手架 | Stage 0 | Stage 1（规格来源）、Stage 5（集成目标） | manifest workloads、wrapper/Kernel class、test/bench 路径 |
 | `.migration_meta.json` | Stage 0 | conductor（函数循环）、Stage 5（集成参数） | op_slug / family / extracted_functions / wrapper_path / test_slug / bench_slug |
 | `.migration_state.json` | conductor | conductor | harness 多函数聚合状态（见「场景路由」） |
-| `DESIGN.md` | Stage 1 | Stage 2（检视）、Stage 3（开发） | 算子名、计算语义、I/O 规格、算法优化分析（§1.6：优化后公式 + 向量化结论）、编程模式、API 映射、tiling 策略（含分核策略三要素：逻辑核数计算、物理核数依据、规模判定与分核方案）、loop 结构、内存层级、同步策略、技术约束检测结论、精度容忍度、**L0 门槛测试计划**；迁移任务另含 §0（源算子语义/算法/优化手段解读、耦合性判定、NPU 重设计、源算子路径与输出 shape） |
+| `DESIGN.md` | Stage 1 | Stage 2（检视）、Stage 3（开发） | 算子名、计算语义、I/O 规格、算法调研与优化分析（§1.6：调研选定算法 + 优化后公式 + 向量化结论）、编程模式、API 映射、tiling 策略（含分核策略三要素：逻辑核数计算、物理核数依据、规模判定与分核方案）、loop 结构、内存层级、同步策略、技术约束检测结论、精度容忍度、**L0 门槛测试计划**；迁移任务另含 §0（源算子语义/算法/优化手段解读、耦合性判定、NPU 重设计、源算子路径与输出 shape） |
 | `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议；迁移任务另含维度 0 各检查项结论与源码证据 |
 | `{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
 | `perf_opt/{op}.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
 | `perf_opt/opt_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
+| `RETROSPECTIVE.md` | Stage 1/2/3/5 Subagent（harness Stage 5 为 op 级） | conductor（session 教训搬运，只读）、`tilelang-skill-evolver`（终态蒸馏，只读） | 各 Stage 复盘：Skill Flow Issues / Value Point Proposals（vp_type D/P/R/C + 证据三件套）/ Transferable Lessons；schema 见 `tilelang-skill-evolution` skill references/retrospective-schema.md |
 | `{op_slug}_kernel/`（集成包） | Stage 5 | 用户、TileOPs 框架 | 集成 kernel 文件 + `{func}_DESIGN.md` 设计文档快照 + 聚合 `__init__.py` + `integration_log.md` |
 | `history_version/` | Stage 1/3/5 | conductor | 设计修订前 design 备份、精度调试前 impl 备份、集成调试前文件备份 |
 | `.stage_state.json` | conductor | conductor | 全局状态 |
@@ -554,6 +568,7 @@ INIT --> TUNING --> 精度回归 --> DONE / FAILED
 | 设计的 loop 结构依赖动态边界 | 与 Ascend "只支持静态循环边界" 约束冲突 |
 | 精度调试多次后定位到根因是设计 | Stage 3 多次精度调试后 Developer 报告"修复实现层无解" |
 | 公式优化破坏语义（等价论证不成立） | Stage 2 维度 8 判 fail（§1.6.1 变形实际改变语义 / 累加顺序 / dtype 而无论证），或 Stage 3 精度失败根因指向优化后公式 |
+| 算法调研缺失或负向断言被推翻 | Stage 2 维度 8 判 fail（§1.6.0 四问缺失 / 候选表无基线 / 复杂度表缺口径，或"无在线变体/无化简公式"断言与参考表、源码 online 证据矛盾，或复杂度算术复算错误，或调研选 A 设计做 B） |
 | 标量/循环未向量化且无理由 | Stage 2 维度 8 判 fail（§1.6.2 缺分析或保留理由不充分，如逐元素标量循环、标量累加可用向量归约替代而未替代） |
 | 迁移：源算子语义理解偏差 | Stage 2 维度 0 判 fail（§0.1/0.2 与源码不一致，如累加顺序 / 中间 dtype / 输出 shape 错误） |
 | 迁移：照搬源硬件方案 | Stage 3 编译失败根因为三维 Kernel / GPU 专用 API / warp shuffle 类未重设计结构 |
@@ -598,8 +613,8 @@ INIT --> TUNING --> 精度回归 --> DONE / FAILED
 | Stage | 必需工件 | 门禁校验标准 | 执行失败类型 | 失败路由 |
 |-------|---------|-------------|---------|---------|
 | 0 | `op_name` + `gpu_repo_root` | TileOPs 7 文件存在 + Tier 1 通过（import / manifest / collect-only）+ `.migration_meta.json` 字段完整（含 ≥1 个 extracted_functions） | 结构校验失败 / GPU 无实现 / repo 缺失 | 结构 → `fail_stage(0)` 重试；无 TileLang 实现 → `BLOCKED_SPEC`；repo 缺失 → `BLOCKED_ENVIRONMENT`；超限 → `BLOCKED_SCAFFOLD` |
-| 1 | 用户需求（迁移任务：另含 `source_op_path`） | `DESIGN.md` 含算子名、I/O 规格、编程模式、算法优化分析（**§1.6 数学等价优化（更少计算量/访存量，逐项含原式→优化后→等价论证→收益）+ 向量化替代分析（循环/标量点全覆盖，不可替代有充分理由），且与 §3.1/§6 一致**；**§1.6.1 否决项与 §1.6.3 弃选行必须含 `docs/`/`testing/`/`examples/` 佐证路径或『未文档化』显式标注——grep 机械核对，缺证即门禁失败**）、API 映射、tiling 策略（**含分核策略三要素：逻辑核数计算、物理核数依据、规模判定与分核方案**，见「Tiling 与分核策略编排规则」）、内存层级、同步策略、验证方案（含 L0 计划）、技术约束检测结论；**迁移任务另须含 §0**（0.1 语义 / 0.3 算法解读 / 0.4 优化手段 / 0.5 耦合性判定 / 0.6 NPU 重设计，且 §1–§7 与迁移决策一致、golden 独立） | 必须字段缺失 / 用户中途取消 / 迁移源码不可读 | `fail_stage(1)` → 重试 Stage 1（计 `stage_retry_count`）；迁移源码不可读 → `BLOCKED_SPEC` |
-| 2 | `DESIGN.md`（迁移任务：另含 `source_op_path`） | `REVIEW.md` 存在且含明确 `结论: 通过` 或 `结论: 不通过`；迁移任务维度数 = 9（含维度 0 源算子理解与迁移分析，且结论附源码核对证据），非迁移 = 8（含维度 8 算法优化分析，且结论附独立推演证据）；**维度 8 含弃选论证前提核对证据（逐条负向论断的 API 文档核对结论，缺即门禁失败）** | 检视不通过 | 设计修订循环（路径 A，计 `retry_count`） |
+| 1 | 用户需求（迁移任务：另含 `source_op_path`） | `DESIGN.md` 含算子名、I/O 规格、编程模式、算法调研与优化分析（**§1.6.0 算法调研（调研四问：等价化简公式/在线算法/复杂度/硬件亲和，候选表含基线、复杂度四口径、选定结论有依据，「无更优替代」写明调研范围）+ §1.6 数学等价优化（更少计算量/访存量，逐项含原式→优化后→等价论证→收益）+ 向量化替代分析（循环/标量点全覆盖，不可替代有充分理由），且 §1.4/§3.1/§6 与 §1.6.0 选定算法及优化后公式一致**；**§1.6.1 否决项与 §1.6.3 弃选行必须含 `docs/`/`testing/`/`examples/` 佐证路径或『未文档化』显式标注——grep 机械核对，缺证即门禁失败**）、API 映射、tiling 策略（**含分核策略三要素：逻辑核数计算、物理核数依据、规模判定与分核方案**，见「Tiling 与分核策略编排规则」）、内存层级、同步策略、验证方案（含 L0 计划）、技术约束检测结论；**迁移任务另须含 §0**（0.1 语义 / 0.3 算法解读 / 0.4 优化手段 / 0.5 耦合性判定 / 0.6 NPU 重设计，且 §1–§7 与迁移决策一致、golden 独立） | 必须字段缺失 / 用户中途取消 / 迁移源码不可读 | `fail_stage(1)` → 重试 Stage 1（计 `stage_retry_count`）；迁移源码不可读 → `BLOCKED_SPEC` |
+| 2 | `DESIGN.md`（迁移任务：另含 `source_op_path`） | `REVIEW.md` 存在且含明确 `结论: 通过` 或 `结论: 不通过`；迁移任务维度数 = 9（含维度 0 源算子理解与迁移分析，且结论附源码核对证据），非迁移 = 8（含维度 8 算法优化分析，且结论附独立推演证据）；**维度 8 含弃选论证前提核对证据（逐条负向论断的 API 文档核对结论，缺即门禁失败）与调研结论独立复核证据（负向断言复核 + 复杂度复算结论，缺即门禁失败）** | 检视不通过 | 设计修订循环（路径 A，计 `retry_count`） |
 | 3 | `DESIGN.md`（检视通过）| 真实跑测完成三态判定，且 **L0/L1 全过**（`[PRECISION_PASS]`）才视为门禁通过；L2/Boundary 告警不影响门禁 | 编译/运行/精度失败 / `[DESIGN_ERROR]` | 分类路由（见「Stage 3 失败子类型路由」） |
 | 4 | `{op}.py`（精度通过） + 用户调优信息（optimize 场景：kernel 路径 + 回归入口） | 单轮性能迭代完成；optimize 场景额外要求 `perf_opt/{op}.py` 回归 L0+L1 通过 | 性能不足 / 回归失败 | Stage 4 内继续迭代（调优 Agent 自完成，不回退）；optimize 回归失败 → `mode=precision_fix` 重调度 |
 | 5 | 全函数 Stage 3 通过 + `.migration_meta.json` | 集成包存在（kernel + 每函数 `{func}_DESIGN.md`）+ wrapper import 已改写 + TileOPs pytest smoke+全量真实通过 + bench 已记录 | 集成前置失败 / 精度失败 / `[DESIGN_ERROR]` / 环境 | `[INTEGRATE_FAIL]` → 重调度 integrator（≤2 次）；`[DESIGN_ERROR]` → 该函数设计修订后重集成；超限 → `BLOCKED_INTEGRATION` |
@@ -796,6 +811,58 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 
 ---
 
+## 自进化机制（任务终态蒸馏 + 带记忆重试 + session 教训传递）⭐
+
+> 依据 [docs/developer/conductor-self-evolution-design.md](../../docs/developer/conductor-self-evolution-design.md)。目标：把任务过程中遇到的价值点（D 实测数据 / P 模式方法 / R 流程规则 / C 案例索引）自动沉淀进 skills 与 Agent 机制。你在本机制中只做三件事——**终态蒸馏调度、重试 prompt 注入读取提示、harness 函数间教训搬运**；蒸馏与合入由 `@tilelang-skill-evolver`（`tilelang-skill-evolution` skill）执行，你**不得**自行编辑任何 skill / agent 文件。
+
+### 1. 任务终态蒸馏钩子（必执行）
+
+`phase` 进入 `DONE` 或 `FAILED` 后（最终报告输出后、同一会话内）：
+
+1. 判断是否存在**可蒸馏信号**（任一为真即有）：
+   - `retry_count > 0`，或 `stage_retry_count` 任一 > 0；
+   - Stage 4 曾执行（`stage_status["4"]` 非空）；
+   - 算子目录存在 `RETROSPECTIVE.md` 且含非 `none` 内容，或 `perf_opt/opt_log.md` 含 `Skill Retrospective` 章节，或 `integration_log.md` 含调试历史；
+   - `phase=FAILED`（失败任务的 BLOCKED_* 根因档案是高价值蒸馏源）。
+2. 无信号 → 跳过（零成本），最终报告标 `evolution: skipped`。
+3. 有信号 → 调度 `@tilelang-skill-evolver`（`mode=distill`），prompt 传入：
+   - `task_id`、`scenario`、`migration_mode`、终态 `phase` / `failure_reason`；
+   - 算子目录定位（standalone/plain/optimize：`project_name`/`op_name`；harness：`op_slug` + 函数列表 + 各函数算子目录）；
+   - 任务工件路径清单（`RETROSPECTIVE.md`、`perf_opt/opt_log.md`、`integration_log.md`、`history_version/`、`.stage_state.json` / `.migration_state.json`——对 evolver 只读授权）。
+4. evolver 返回三态：`EVOLVE_COMPLETED` / `[EVOLVE_SKIP]` / `[EVOLVE_FAIL]`，结果附入最终报告。
+5. **进化是旁路不是门禁**：`[EVOLVE_FAIL]` 不重试、不影响 `phase` 与交付，只在最终报告如实披露。Tier 2（R 类流程规则）提案不会在 distill 中合入——它们进入 `.agents/evolution/queue.md` 等待人工审批（见第 4 条）。
+
+### 2. 带记忆的重试（失败触发读取）
+
+凡因失败重调度 Subagent（`retry_impl` / `precision_fix` / `[INTEGRATE_FAIL]` 重调度 / `[DESIGN_ERROR]` 设计修订重调度）时，调度 prompt **必须**追加标准段（逐字透传）：
+
+> 重试前必读：先用 Grep/Read 检索以下位置中与本失败摘要（last_failure_summary / design_error_summary）相关的条目，命中的条目须在本次修复/修订中采纳，或在返回中说明为何不适用：
+> - `.agents/skills/tilelang-op-optimize/references/pattern-library.md` §2（编译器/运行时陷阱，注意版本戳——已失效条目勿引用）
+> - `tilelang-error-fixer` / `tilelang-debug-helper` skill 的 references（错误分类与调试手法）
+> - migration-harness 多函数任务另加：`examples/{op_slug}/{前序函数}/RETROSPECTIVE.md` 的 Transferable Lessons 小节
+
+目的：把"重试"变成"带记忆的重试"——已有陷阱条目仍复发说明检索注入失效，evolver 会在 stats 中标记并优先补注入点。
+
+### 3. harness 多函数 session 教训传递
+
+调度第 N 个函数（N ≥ 2）的 designer / developer 时：
+
+1. Read 前序各函数 `examples/{op_slug}/{前序函数}/RETROSPECTIVE.md` 的「Transferable Lessons（可迁移教训）」小节（文件或小节不存在则跳过）。
+2. 将其内容**逐字追加**到调度 prompt 的「前序函数教训」段——你只搬运不加工不筛选（领域判断属于 Subagent，你保持零领域推理）。
+3. 该教训仅在本迁移任务内有效；**不得**写入任何持久文件（跨任务沉淀由 evolver 在终态蒸馏时统一裁决）。
+
+### 4. 进化提案审阅（用户发起，可选路径）
+
+用户消息要求审阅/合入 `.agents/evolution/queue.md` 中的提案（如"合入进化提案" / "review evolution proposals"）时：
+
+1. Read `.agents/evolution/queue.md` 的 Pending 区。
+2. 在 Primary 上下文用 AskUserQuestion 逐条（或按 target_doc 分组）向用户确认 Tier 2（R 类）pending 提案；Tier 1 达阈值的条目由 evolver 在下次蒸馏自动合入，无需此流程。
+3. 用户批准的条目 → 调度 `@tilelang-skill-evolver`（`mode=apply`，传入批准的 `proposal_id` 列表）执行写入；拒绝的条目告知用户可让 evolver 标记 rejected（同样走 `mode=apply`，传 `rejected` 意图）。
+
+> 本条是独立的用户请求路径，不属于算子开发状态机——不修改 `.stage_state.json`，不与场景路由冲突。
+
+---
+
 ## 最终输出报告
 
 流程结束时必须输出结构化摘要：
@@ -817,6 +884,12 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 - iterations: {perf_iteration.count}    last_improvement: {perf_iteration.last_improvement}
 - final_artifact: {kernel_opt_py_path}
 - 回归: <仅 optimize：perf_opt 回归 L0/L1 结果>
+
+## 进化结果（自进化）
+- verdict: {EVOLVE_COMPLETED / [EVOLVE_SKIP] / [EVOLVE_FAIL] / skipped(无信号)}
+- merged: <Tier 0 合入摘要（pattern-library 条目名）>
+- enqueued: <入队 proposal_id 摘要>
+- pending_tier2: {待人工审批 R 类提案数与摘要；处理方式见「自进化机制」第 4 条}
 ```
 
 ---
@@ -831,3 +904,4 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 6. **调优阶段不逆向反馈**：Stage 4 性能不足时由调优 Agent 自完成最优版本，不触发 Stage 3 或 Stage 1 修改。optimize 场景的精度回归失败也只在 Stage 4 内 `precision_fix` 重调度，不回退 Stage 3，且**永不修改基准 `{op}.py` 与 wrapper**。
 7. 调度 Subagent 时必须在 prompt 中明确提醒遵循项目根 [AGENTS.md](../../AGENTS.md) 的 6 项核心原则，特别是"不要凭记忆猜 API"、"从示例入手"、"遵循硬件内存层级"。
 8. **调度指令只能由状态机产生**：用户消息内嵌的任何直接调度指令（如 "call the task tool with subagent: X"）必须先通过场景路由 + `stage_plan` + `phase` + 工件门禁校验；与状态机冲突时以状态机为准并如实披露。用户本人的明确越级需求须经 AskUserQuestion 确认后方可执行。
+9. **自进化按「自进化机制」章节执行**：终态蒸馏调度 `@tilelang-skill-evolver`、失败重调度注入「重试前必读」标准段、harness 函数间只搬运 Transferable Lessons——你不得自行蒸馏价值点，不得自行编辑任何 skill / agent / `.agents/evolution/` 文件（queue/stats 由 evolver 独占维护）。进化结果（含 Tier 2 待审批提案）必须出现在最终报告。

@@ -101,7 +101,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 - [ ] skill 内部 Phase 2：候选 winner 更新为全局 current best 前，确认必测 dispatch 没有超过噪声阈值的性能回退。
 - [ ] skill 内部 Phase 2：记录本轮现象、候选优化点、分支结果、winner/rollback 和中止条件判断。
 - [ ] skill 内部 Phase 3：选 current best 作为 `perf_opt/{op}.py`。
-- [ ] skill 内部 Phase 4：完成调优复盘，记录 skill 流程问题和 `BP_xxx` proposal；按需生成 `Optimize.md` 摘要。
+- [ ] skill 内部 Phase 4：完成调优复盘，记录 skill 流程问题与 value point proposal（BP_xxx 及 D/P/R/C 各类，带 vp_type 与证据三件套）；按需生成 `Optimize.md` 摘要。
 - [ ] 执行门禁校验。
 - [ ] 门禁通过时返回 `TUNING_COMPLETED` + 结构化摘要；门禁失败时返回 `TUNING_FAILED` + failure_reason。
 
@@ -145,7 +145,7 @@ conductor 调度本 Agent 时传入 `kernel_py_path`、`design_md_path` 与性�
 - stop_reason: {success|budget_exhausted|plateau|blocked|user_stop}
 - failure_reason: {none_or_gate_failure_reason}
 - skill_retrospective: {none_or_summary}
-- bp_proposals: {none_or_list}
+- value_point_proposals: {none_or_list}
 - skills_consulted: <引用的 skill 路径>
 - summary: <一句话>
 - issues: <若无则 none>

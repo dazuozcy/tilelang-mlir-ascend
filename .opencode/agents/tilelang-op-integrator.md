@@ -122,6 +122,18 @@ python -m pytest benchmarks/ops/bench_{bench_slug}.py -v --tb=short -s
 - 定位到设计层根因 → `[DESIGN_ERROR]` + design_error_summary
 - 定位到测试/用例/环境问题 → `[INTEGRATE_FAIL]` + 问题定位（不消耗 attempt 修复不可修文件）
 
+### 终态复盘（Retrospective，自进化钩子）⭐
+
+返回 `INTEGRATE_COMPLETED` 或 `[DESIGN_ERROR]` 前（`[INTEGRATE_FAIL]` 不写——将被 conductor 重调度），向 **op 级** `examples/{op_slug}/RETROSPECTIVE.md` **追加** `Stage 5 (integrate)` 复盘章节（先 Read 既有内容，整文件写回，只追加不覆盖历史章节）：
+
+- 章节模板与字段规范（canonical）：`.agents/skills/tilelang-skill-evolution/references/retrospective-schema.md`。两个标准表（Skill Flow Issues / Value Point Proposals）+ Transferable Lessons 小节。
+- 重点提取：
+  - 集成调试闭环中**验证过**的修复手法（P 类，如 fp32 中间量、raw N tile 参数）；
+  - 新踩的集成/编译陷阱（D 类，须带 evidence + repro + toolchain_stamp 三件套）；
+  - 集成脚本与流程缺陷（R 类提案，如 integrate_kernel.py 的 [error]/[warn] 缺陷、已知修复目录缺口）；
+  - 调试 2 次以上仍失败或终态失败的根因档案（C 类反例）。
+- 质量红线：无则如实写 `none`；单任务偶然现象不得写成通用规则。
+
 ---
 
 ## 输出产物
@@ -171,6 +183,6 @@ python -m pytest benchmarks/ops/bench_{bench_slug}.py -v --tb=short -s
 1. 不得调用其他 Subagent。
 2. 不得读写 `.stage_state.json` / `.migration_state.json`（conductor 专属）。
 3. 不得在 Subagent 上下文调用 `AskUserQuestion`。
-4. 不得修改 tests / benchmarks / manifest / ops / workloads / conductor 产物目录 / 集成包内 `{func}_DESIGN.md` 设计文档快照。
+4. 不得修改 tests / benchmarks / manifest / ops / workloads / 集成包内 `{func}_DESIGN.md` 设计文档快照。conductor 产物目录 `examples/{op_slug}/` 亦不得修改既有文件——**例外**：按「终态复盘」写入 `examples/{op_slug}/RETROSPECTIVE.md`（仅新增/追加该文件，不触碰既有产物）。
 5. 不得为通过测试而弱化断言、放大容差或跳过用例。
 6. 验证结论必须来自真实 pytest 运行结果，不得推断。
