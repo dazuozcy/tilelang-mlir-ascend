@@ -69,6 +69,33 @@ stages:
   `.agents/skills/add-npu-op/scripts/integrate_kernel.py` to copy verified kernels into
   `tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/` — each function's Stage 1 design
   doc (`DESIGN.md`) is copied alongside the integrated kernel as `{func}_DESIGN.md` —
-  rewrite wrapper imports, run pytest (smoke → full), and report benchmarks.
+  rewrite the wrapper import into a baseline/perf_opt kernel-source selection block,
+  run pytest (smoke → full), and report benchmarks.
+
+## Baseline vs perf_opt Kernel Selection
+
+Each kernel wrapper (`tileops/kernels/{family}/{op_slug}/{op_slug}.py`) carries a
+**kernel source selection block**: two import paths side by side — the Stage 3
+baseline kernel and the Stage 4 tuned `perf_opt` kernel — with exactly one active.
+Selection is done by swapping the comment:
+
+```python
+# --- baseline (Stage 3) ---
+# from .{op_slug}_kernel import {func}
+# --- perf_opt (Stage 4 tuned) ---
+from .{op_slug}_kernel.perf_opt.{func} import {func}
+```
+
+- Default policy: the `perf_opt` source is active once the tuned kernel (a drop-in
+  replacement with the same factory signature, produced by the optimize stage under
+  `{op_slug}_kernel/perf_opt/`) has passed its L0/L1 regression; the baseline source
+  is active otherwise.
+- `pytest tests/ops/` and `pytest benchmarks/ops/` dispatch through whichever source
+  is active, so benchmarks measure the adopted kernel without any other code change.
+- When the two kernel versions ship different tuned default parameters (e.g.
+  `block_size`), the paired default assignment inside the block is toggled together
+  with the import (see `tileops/kernels/elementwise/mish/mish.py` for an example).
+- The baseline kernel files are never modified; rolling back means flipping the
+  comment back to the baseline import.
 
 See `.opencode/agents/tilelang-op-conductor.md` for the full stage-gate orchestration.

@@ -1,6 +1,6 @@
 ---
 name: tilelang-op-optimize
-description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调优，产出 perf_opt/{op}.py、msprof op / NPU event 性能数据和调优日志。触发：性能调优、optimize、性能优化、perf tuning、Stage 4 调优。"
+description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调优，产出 perf_opt/{op}.py、msprof op 性能数据和调优日志。触发：性能调优、optimize、性能优化、perf tuning、Stage 4 调优。"
 ---
 
 # TileLang-NPUIR 算子性能调优
@@ -11,12 +11,12 @@ description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调�
 
 - `examples/{project}/{op}/perf_opt/{op}.py`
 - `examples/{project}/{op}/perf_opt/opt_log.md`
-- `perf_opt/profiles/` 下的 raw `msprof op` 数据，以及必要时的 NPU event 数据
+- `perf_opt/profiles/` 下的 raw `msprof op` 数据
 - `perf_opt/logs/` 下的实验 stdout/stderr 过程日志
 
 若项目流程要求交付摘要，可额外生成 `examples/{project}/{op}/Optimize.md`，但它只能从 `perf_opt/opt_log.md` 摘要，不重复记录全过程。
 
-性能口径分两层：`msprof op Task Duration` 用于判断目标 kernel 内部执行时间；NPU event median 用于判断设备侧调度、派发和真实完成时间。若用户或 conductor 指定唯一主指标，按指定主指标交付；若未指定，默认用 `msprof op` 做 kernel 优化主口径。当 `Block Dim` 远超 AI Core Count、单 block 工作量很小、或 event 与 `msprof` 明显背离时，必须同时记录并分析 NPU event。event 用于调度结构粗筛和回退门禁；若多个候选 event 差异落入噪声阈值或形成平区，标记 `flat_response`，不能用单 pass event 排序，可用 `msprof Task Duration`、负载均衡和资源占用决胜。
+**性能口径唯一**：`msprof op Task Duration`（kernel-only 时延）是本 skill 唯一的 kernel 时延测量方式与优化主指标。不关注算子端到端时延，不采集 NPU event、runner 端到端时间等其他口径；一切优化点的讨论、实验对比、winner 判定和性能目标达成判断，均以降低 `msprof op` 测得的 `Task Duration(us)` 为准。候选差异落入噪声阈值或多次复测打平时，用更大 `launch-count` 复测并以 `Task Duration`、负载均衡和资源占用决胜，不得引入其他测量口径。
 
 ## 资源索引
 
@@ -45,7 +45,7 @@ description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调�
    - **向量化轴与布局重估**：核对当前实现的向量化轴与核内布局——即使上游设计已选定，其结论可能基于旧工具链或未枚举重排布局变体（I/O layout 是契约、核内布局是设计变量；含 ≥2 个非 batch 维的逐元素/窗口/规约类算子须对照 pattern-library §1 评估「原生布局+最内连续轴」vs「核内重排布局+高整除性轴（如 C 轴融合转置链）」两条路线）；
    - **编译器陷阱版本戳核对**：pattern-library §2 的陷阱结论绑定工具链版本——若 tilelang 源码被修改/重编译过，相关结论自动视为待重验，不得直接引用；
    - 若 `DESIGN.md` 含 §1.6.3（向量化轴与数据布局决策），本轮调优须对照该决策与实测现象（标量占比、带宽利用率）——现象与决策矛盾时优先重验布局路线；
-   - **实验裁决执行（DESIGN 含实验裁决三件套时必做）**：若 `DESIGN.md` §1.6 含「主选 + 备选 + 实验裁决计划」（判定裕度依赖未实证常数的备选方案），A/B 实测是本轮调优的必做项，不是可选项——按裁决计划执行：① 在 `perf_opt/` 下实现备选变体（基准 `{op}.py` 与 wrapper 不动）；② 按计划的代表 shape 与主选同口径对比（msprof op + 必要时 event）；③ 实测/反解裁决所依赖的未知常数（如转置吞吐、跨步代价）；④ 按计划判定阈值裁决——备选胜出（全局或按 shape 分片）则采纳备选变体为候选 best，主选胜出则以实测数字固化设计判定；⑤ 实测数据与裁决结论写入 `opt_log.md`，并报告 conductor 以触发设计修订回写（DESIGN.md 的判定依据从"先例/下界估算"升级为"实测数字"；新实测常数追加回 pattern-library.md，见 Phase 4）。
+   - **实验裁决执行（DESIGN 含实验裁决三件套时必做）**：若 `DESIGN.md` §1.6 含「主选 + 备选 + 实验裁决计划」（判定裕度依赖未实证常数的备选方案），A/B 实测是本轮调优的必做项，不是可选项——按裁决计划执行：① 在 `perf_opt/` 下实现备选变体（基准 `{op}.py` 与 wrapper 不动）；② 按计划的代表 shape 与主选同口径对比（msprof op）；③ 实测/反解裁决所依赖的未知常数（如转置吞吐、跨步代价）；④ 按计划判定阈值裁决——备选胜出（全局或按 shape 分片）则采纳备选变体为候选 best，主选胜出则以实测数字固化设计判定；⑤ 实测数据与裁决结论写入 `opt_log.md`，并报告 conductor 以触发设计修订回写（DESIGN.md 的判定依据从"先例/下界估算"升级为"实测数字"；新实测常数追加回 pattern-library.md，见 Phase 4）。
 4. 搜索同类算子或历史优化实现，尤其关注：
    - `T.serial`
    - `T.Pipelined`
@@ -62,7 +62,6 @@ description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调�
 找出真实 dispatch path
 -> 每个 dispatch path 选择一个代表 workload
 -> 串行运行 msprof op
--> 必要时采集 NPU event median
 -> 校验 profile 有效性
 -> 记录 Performance Test Data
 ```
@@ -72,7 +71,6 @@ description: "对精度已通过的 TileLang-NPUIR 算子做 Stage 4 性能调�
 - 普通 shape、tile、axis 数值差异不算 dispatch path，除非它触发真实代码分支。
 - 每个 dispatch path 默认只采一个代表 workload。
 - 无效 profile 不能进入诊断。
-- `msprof op` 与 NPU event 是不同口径，不能直接横比；调度结构类优化必须先看 event 是否明显回退，若 event 清晰改善则优先保留，若 event 打平则按 `msprof` 和结构证据决胜。
 
 ### Phase 2：优化闭环
 
@@ -85,9 +83,9 @@ Phase 2 是多轮闭环。优化点分析不做成一次性前置步骤；每轮
 3. 从同一个 base 派生多个实验分支：`perf_opt/{op}_opt_v{iter}_{opt_id}.py`。
 4. 每个实验分支只改一个主要优化点。
 5. 每个实验分支跑 L0 精度回归。
-6. 对精度通过的分支，用 `msprof op` 采集目标 kernel 性能；若分支涉及 `Block Dim / num_cores / T.serial / T.Pipelined / multi-buffer` 等调度结构变化，同步采集 NPU event median，并按 [profile-collection.md](references/profile-collection.md) 检查 event 测量质量。
+6. 对精度通过的分支，用 `msprof op` 采集目标 kernel 性能。
 7. 若结构性分支正确性通过且方向有效，先围绕该结构暴露的关键参数做一轮 coarse autotune 或等价手动粗搜；再检查 autotune top-k 与 winner 邻域，必要时做手动/脚本精搜，最后把精搜 winner 作为该结构分支的候选版本复测。
-8. 在同一 `(dispatch_path, workload_id)` 内比较 valid 分支；按本轮主指标选择候选 winner。kernel 内部优化默认看 `Task Duration(us)`；调度结构优化要求 event 不明显回退，若 event 清晰改善则优先保留，若 event 打平则用 `msprof Task Duration`、负载均衡和资源占用决胜。
+8. 在同一 `(dispatch_path, workload_id)` 内比较 valid 分支；按本轮主指标（`msprof op Task Duration(us)`）选择候选 winner；Task Duration 打平时用负载均衡、资源占用和代码复杂度决胜。
 9. 候选 winner 更新为全局 current best 前，必须确认必测 dispatch 没有超过噪声阈值的性能回退；若只在部分 dispatch 提升但其它必测 dispatch 明显回退，不更新全局 current best，并记录 rollback/defer 原因。
 10. 若所有分支无提升、无效或阻塞，current best 保持不变。
 11. 记录本轮现象、候选优化点、实验分支、性能、精度、必测 dispatch 非回退检查和 winner/rollback 结论。
@@ -105,6 +103,7 @@ Phase 2 是多轮闭环。优化点分析不做成一次性前置步骤；每轮
 
 1. 选 current best 作为 `perf_opt/{op}.py`。
 2. 确认 `perf_opt/opt_log.md` 已完整记录过程和最终结论。
+3. TileOPs 集成算子（算子目录为 `tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`）：`perf_opt/` 建在该目录下；wrapper 的 baseline/perf_opt 双 import 切换块由 conductor 在回归通过后翻转采纳（perf_opt 默认激活），本 skill 不修改 wrapper。若 tuned kernel 与基准 kernel 的默认参数不同（如 block_size），须在 `perf_opt/{op}.py` 中以模块级常量暴露 tuned 默认值，供 wrapper 切换块成对引用。
 
 ### Phase 4：调优复盘与最终交付
 
@@ -139,11 +138,11 @@ block_size / DMA 效率问题
 
 ### 先确认测量分辨力
 
-当候选性能差异小于噪声阈值、event 曲线呈平区，或同一配置跨 session 漂移明显时，先执行 event 复测和 anchor 漂移检查。不要用单 pass event 对平区内的 `num_cores / block_size` 候选排序。
+当候选的 `Task Duration(us)` 差异小于噪声阈值或多次复测打平时，先用更大 `launch-count` 复测并比较多次独立运行的 `msprof op` 结果；不要用单次 msprof 结果对平区内的 `num_cores / block_size` 候选排序。
 
 ### Autotune 只用于参数选择
 
-autotune 只负责在给定搜索空间中选参数，不是最终裁判。若主要瓶颈是结构问题，先改结构；结构性分支通过正确性并显示方向有效后，再按 [autotune.md](references/autotune.md) 对该结构做 coarse search，随后检查 top-k 和 winner 邻域，最后用 `msprof op` 和必要的 NPU event 复测最终 winner。
+autotune 只负责在给定搜索空间中选参数，不是最终裁判。若主要瓶颈是结构问题，先改结构；结构性分支通过正确性并显示方向有效后，再按 [autotune.md](references/autotune.md) 对该结构做 coarse search，随后检查 top-k 和 winner 邻域，最后用 `msprof op` 复测最终 winner。
 
 ### 经验结论不要过度泛化
 
@@ -161,9 +160,8 @@ autotune 只负责在给定搜索空间中选参数，不是最终裁判。若�
 `perf_opt/opt_log.md` 至少记录：
 
 - Performance Test Data：每个 dispatch 的 workload、target kernel、Task Duration、raw profile。
-- Event Test Data：触发调度结构分析时，记录 NPU event median、重复次数、runner/command、独立 pass 数、anchor 漂移状态、`flat_response/noisy_invalid` 判断和适用 workload。
-- Iteration Log：每轮现象、候选优化点、实验分支、latency、event、精度、`config_no_gain/family_no_gain` 范围、必测 dispatch 非回退检查、winner/rollback。
-- Autotune Log：若使用 autotune，则记录 search space、best config、正确性、winner 的 `msprof op` 和必要的 `event_quality`。
+- Iteration Log：每轮现象、候选优化点、实验分支、latency、精度、`config_no_gain/family_no_gain` 范围、必测 dispatch 非回退检查、winner/rollback。
+- Autotune Log：若使用 autotune，则记录 search space、best config、正确性、winner 的 `msprof op` 复测结果。
 - Final Summary：best 版本、最终 latency、总提升、中止原因。
 - Skill Retrospective：skill 流程问题、建议修改、`BP_xxx` proposal。
 
@@ -188,12 +186,9 @@ autotune 只负责在给定搜索空间中选参数，不是最终裁判。若�
 - summary_doc: examples/{project}/{op}/Optimize.md 或 none
 - verdict: TUNING_COMPLETED
 - iterations: {N}
-- primary_metric: {msprof_task_duration_or_event_median}
+- primary_metric: msprof_task_duration
 - baseline_latency: {v} us
-- baseline_event_median: {v_or_na} us
 - final_latency: {v} us
-- final_event_median: {v_or_na} us
-- final_event_quality: {valid/flat_response/noisy_invalid/na}
 - improvement: {x}%
 - stop_reason: {reason}
 - skill_retrospective: {none_or_summary}

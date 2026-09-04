@@ -8,10 +8,10 @@
 
 ## 目录
 
-- `BP_launch_overhead`：launch/scheduling overhead 高；包含 host 侧 `BP_launcher_workspace_alloc` 子模式。
+- `BP_launch_overhead`：launch/scheduling overhead 高。
 - `BP_per_block_fixed_overhead`：per-block 固定开销地板。
 - `BP_task_concurrency_sweet_spot`：`num_cores` 任务并发存在 U 形甜点区。
-- `BP_measurement_resolution_limited`：event 分辨力不足或平区排序不可靠；这是测量质量模式，不代表 kernel 本身瓶颈。
+- `BP_measurement_resolution_limited`：msprof 测量噪声内候选无法可靠排序；这是测量质量模式，不代表 kernel 本身瓶颈。
 - `BP_memory_bandwidth_or_mte`：GM/MTE 搬运效率不足。
 - `BP_ub_pressure`：UB/L0 资源压力限制性能。
 - `BP_ub_traffic_floor`：UB 流量或 vector pass 数成为地板。
@@ -49,7 +49,7 @@
 - 一种 `T.serial` 用法失败，不代表另一种无效。特别是内层分块无法带来 pipeline overlap 时，仍要独立评估多块迭代是否能降低 launch/scheduling overhead。
 - 一个配置失败只记为 `config_no_gain`；只有覆盖关键配置或有明确机制证据时，才能把整类方向记为 `family_no_gain`。
 - 某个模式在当前环境无收益，只能记录为当前 workload / TileLang-NPUIR / CANN / Developer 模式下的实测结论，不要泛化为永久无效。
-- `num_cores` 搜索的 event 曲线可能出现平区；平区内不要用单 pass event 排序。
+- `num_cores` 搜索的 `Task Duration` 曲线可能出现平区；平区内不要用单次 msprof 结果排序。
 - `BP_measurement_resolution_limited` 是测量质量模式，用来阻止错误排序；它不说明 kernel 的真实性能瓶颈。
 
 ---
@@ -60,7 +60,7 @@
 
 - `Block Dim` 远超 AI Core Count，尤其达到物理核数的数十倍或更高。
 - 单 block 工作量小，单 block 元素数 / 字节数不足以摊薄调度开销。
-- `Task Duration` 或 NPU event median 明显高于理论 memory-bound 时间。
+- `Task Duration` 明显高于理论 memory-bound 时间。
 - 增大 block size 曾带来性能提升，但继续增大受 UB/L0 或 tile 合法性限制。
 
 常见反证/不确定点：
@@ -81,32 +81,10 @@
 |---|---|---|
 | 多块迭代 | `T.Kernel(num_cores)` + `for i in T.serial(iters_per_core)` | 降低实际 `Block Dim`，削减 launch/scheduling overhead |
 
-Host launcher 子模式：`BP_launcher_workspace_alloc`
-
-触发信号：
-
-- event 时间远大于 `msprof Task Duration`。
-- host submit 时间随 `Block Dim` 或 grid/block 数近似线性增长。
-- grid/block 数很大时端到端时间明显退化，但 `msprof Task Duration` 不能完全解释。
-- cProfile、runtime trace 或日志显示 `rtMalloc` / `rtFree` 占比高。
-
-可能根因：
-
-- TileLang NPUIR launcher 每次 launch 分配 `workspace_size * blockDim`，例如默认 `32768 * blockDim`。
-- 若真实 workspace size 获取失败，launcher 可能回退到 default workspace，导致大 grid 下每次 launch 分配/释放大量 workspace。
-- 如果 workspace 环境变量或 override 在 wrapper 生成后才读取，可能无法改变已生成 wrapper 的 workspace size。
-
-推荐动作：
-
-- 同时记录 `Block Dim`、workspace bytes、host submit 时间、NPU event median 和 `msprof Task Duration`。
-- 对 host submit 时间与 `Block Dim` 做线性拟合，确认是否存在 O(blockDim) host 侧开销。
-- 用 cProfile、runtime trace 或 launcher 日志确认 `rtMalloc` / `rtFree` 是否主导。
-- 若确认该子模式，优先尝试 `T.serial` / persistent-kernel 降低 `Block Dim`；框架修复方向是无 workspace 需求时返回 0、缓存 workspace 或修正 workspace override 生效时机。
-
 验证指标：
 
 - `Block Dim` 降低。
-- `Task Duration` 降低，且 NPU event median 不明显回退；event 打平时记录 `flat_response` 和 msprof 决胜依据。
+- `Task Duration` 降低。
 - `num_cores` 曲线被记录，不能用单个坏点否定整条路线。
 - 精度不退化。
 
@@ -115,27 +93,23 @@ Host launcher 子模式：`BP_launcher_workspace_alloc`
 触发信号：
 
 - `Block Dim` 远超 AI Core Count，且单 block 数据量很小。
-- NPU event median 明显大于 `msprof Task Duration`，疑似设备侧派发/调度波次主导。
 - 改变 block_size 后，单 block 墙钟或每轮执行时间近似恒定。
 - flat-grid 端点性能差，但减少 `num_cores` 后可能出现中间最优点。
 
 常见反证/不确定点：
 
-- event runner 口径含 host 开销，无法证明是设备侧时间。
-- event 与 `msprof Task Duration` 同步改善或同步变差，主要瓶颈可能不在 block 派发。
 - 单 block 工作量已经足够大，减少 `Block Dim` 反而降低并行度。
 
 推荐动作：
 
 - 创建 `T.serial` 多块迭代或等价 grid 聚合分支。
 - 扫 `num_cores` 曲线，而不是只测 AI Core Count 一个点。
-- 同时记录 `msprof Task Duration` 和 NPU event median；调度结构候选 winner 必须通过 event 回退门禁，event 平区内用 msprof 决胜。
+- 记录 `msprof Task Duration` 与 `num_cores` 曲线；平区内先用更大 `launch-count` 复测，复测后仍打平时用 imbalance 和资源占用决胜。
 - 若大 tile 触发 UB 溢出，先减少 buffer 或 tile，再重测该结构，不要直接否定整类路线。
 
 验证指标：
 
-- NPU event median 明显下降；或在甜点区形成 `flat_response`，并有 `msprof Task Duration` 决胜依据。
-- `msprof Task Duration` 不发生不可接受回退。
+- `Task Duration` 在甜点区内降低。
 - `Block Dim` 降低，`num_cores` 曲线存在合理最优区间。
 
 ## BP_task_concurrency_sweet_spot：`num_cores` 任务并发存在 U 形甜点区
@@ -144,55 +118,53 @@ Host launcher 子模式：`BP_launcher_workspace_alloc`
 
 - 使用 `T.Kernel(num_cores)` + `T.serial(iters_per_core)`，`num_logical` 固定但 `num_cores` 可调。
 - 低 `num_cores` 下每个任务循环次数过多，`Task Duration` 偏高，疑似 DMA/VEC 交替空转。
-- 中间 `num_cores` 区间明显更快，继续增大后 event 或 Task Duration 又变差。
-- 甜点区内 event 差异很小，但 `msprof Task Duration` 或整除性仍能区分候选。
+- 中间 `num_cores` 区间明显更快，继续增大后 `Task Duration` 又变差。
+- 甜点区内 `Task Duration` 差异很小，但整除性 / imbalance 仍能区分候选。
 
 常见反证/不确定点：
 
 - 当前 kernel 计算量足够大，任务并发不足不是主要瓶颈。
-- event 噪声大到无法确认 U 形曲线，需要先匹配 `BP_measurement_resolution_limited`。
+- `Task Duration` 复测噪声大到无法确认 U 形曲线，需要先匹配 `BP_measurement_resolution_limited`。
 - 最优驻留任务数依赖硬件、CANN、TileLang-NPUIR 和 workload，不能把某个 `num_cores` 固化成通用常数。
 
 推荐动作：
 
 - 计算 `num_logical=ceildiv(N, block_size)`、`iters_per_task=ceildiv(num_logical, num_cores)`、`min/max iters` 和 `imbalance`。
 - 扫 `num_cores` 时覆盖低并发端、`4x/6x/8x AI Core Count` 任务并发锚点、低 imbalance 候选和 flat-grid 端点；只有硬件上下文或 profile 明确给出其它调度核口径时，才使用该口径修正。
-- event 用于识别左端并发不足和右端派发开销；甜点区内若 event 打平，用 `msprof Task Duration` 决胜。
-- 优先选择 event 不明显回退、`msprof` 更低、`imbalance` 更小且 UB/L0 合法的候选。
+- 平区内先用更大 `launch-count` 复测 `Task Duration`；复测后仍打平时用 imbalance、整除性和资源占用决胜。
+- 优先选择 `Task Duration` 更低、`imbalance` 更小且 UB/L0 合法的候选。
 
 验证指标：
 
 - 低并发端、中间甜点区、过多任务端的曲线形态被记录。
-- winner 的 event 不明显回退，`Task Duration` 在甜点区内更优。
+- winner 的 `Task Duration` 在甜点区内更优。
 - `min/max iters` 或整除性解释平区内部差异。
 
-## BP_measurement_resolution_limited：event 分辨力不足或平区排序不可靠
+## BP_measurement_resolution_limited：msprof 测量噪声内候选无法可靠排序
 
 触发信号：
 
-- event 曲线大面积平坦，候选差异小于噪声阈值，默认按 10% 判断。
-- 同一配置跨 pass/session 漂移明显，或 session 早期出现系统性膨胀。
-- event 排序与 `msprof Task Duration` 排序冲突。
-- 参考实现、历史 best 或固定 anchor 与当前 event 量级明显不一致。
+- `Task Duration` 曲线大面积平坦，候选差异小于噪声阈值，默认按 10% 判断。
+- 同一配置跨独立运行漂移明显，或 session 早期出现系统性膨胀。
+- 参考实现、历史 best 的 `Task Duration` 与当前量级明显不一致。
 
 常见反证/不确定点：
 
-- 多个独立 pass 和 anchor 均稳定，event 差异超过噪声阈值。
-- 用户指定的唯一主指标就是 event，且差异显著。
+- 多次独立运行（更大 `launch-count`）后 `Task Duration` 差异稳定超过噪声阈值。
+- 用户指定的唯一主指标就是 `Task Duration`，且差异显著。
 
 推荐动作：
 
-- session 预热后再记录 event。
-- 至少做 2 个独立 event pass，每个 pass 重测 1-2 个 `anchor_configs`。
-- anchor 漂移超过阈值时，将该 pass 标记为 `noisy_invalid`。
-- event 平区标记为 `flat_response`，不要用单 pass event 排序。
-- `flat_response` 内部用 `msprof Task Duration` 决胜；若 msprof 也打平，再用 imbalance、资源余量和代码复杂度决胜。
+- 采集前先做预热，再记录有效数据。
+- 候选差异小于噪声阈值时，用更大 `launch-count` 复测，并做至少 2 次独立 `msprof op` 运行。
+- 复测后仍打平的平区候选，用 imbalance、整除性、资源余量和代码复杂度决胜，不要用单次 msprof 结果排序。
+- 记录每次采集的 launch 数与复测次数。
 
 验证指标：
 
-- `opt_log.md` 记录 pass 数、`anchor_configs`、drift_status 和 `event_quality`。
-- winner 选择说明 event 是粗筛、回退门禁还是决胜指标。
-- 被作废的 noisy pass 不进入最终排序。
+- `opt_log.md` 记录 launch 数、独立运行次数和复测结论。
+- winner 选择说明 `Task Duration` 是决胜指标，平区内已用结构性证据决胜。
+- 作废的噪声运行不进入最终排序。
 
 ## BP_memory_bandwidth_or_mte：GM/MTE 搬运效率不足
 
@@ -255,11 +227,9 @@ Host launcher 子模式：`BP_launcher_workspace_alloc`
 - tile 已接近 UB/L0 容量上限，继续增大 block_size 收益变小或回退。
 - `Task Duration` 随 block_size 下降后进入平台期，主要受 vector pass 数和 UB 字节流量约束。
 - 估算的 `pass_count * tile_bytes` 能解释大 tile 下的耗时。
-- event 与 `msprof` 没有明显背离，说明主要不是设备侧派发问题。
 
 常见反证/不确定点：
 
-- 仍存在明显 event/msprof 背离，说明调度结构还没解决。
 - 参考实现或同类实现达到明显更高带宽，当前“地板”可能只是结构低效。
 - PipeUtilization 的绝对时间与墙钟矛盾时，只能作方向参考。
 
@@ -273,7 +243,7 @@ Host launcher 子模式：`BP_launcher_workspace_alloc`
 验证指标：
 
 - pass 数、UB 字节数或 buffer 数下降。
-- `Task Duration` 和必要时 event median 改善。
+- `Task Duration` 改善。
 - 精度不退化，必测 dispatch 不回退。
 
 ## BP_pipeline_overlap：搬运和计算未重叠
@@ -404,9 +374,9 @@ Host launcher 子模式：`BP_launcher_workspace_alloc`
 推荐动作：
 
 - 按 [autotune.md](autotune.md) 定义小而合法的搜索空间。
-- winner 必须单独跑 `msprof op`；若参数涉及调度结构，还必须采集 NPU event，不能只用 autotune latency。
+- winner 必须单独跑 `msprof op` 复测，不能只用 autotune latency。
 
 验证指标：
 
-- best config 在本轮主指标下最低；调度结构搜索必须确认 NPU event median 不明显回退，event 平区内记录 `msprof` 决胜依据。
+- best config 在本轮主指标（`msprof op Task Duration`）下最低；平区内记录 imbalance/整除性决胜依据。
 - 正确性通过。

@@ -15,7 +15,7 @@ skills:
 
 Stage 1/3 产出的独立交付件（`examples/{op_slug}/{func}/DESIGN.md` 设计文档与 `{func}.py` kernel，kernel 已通过 L0/L1 内嵌测试）需要接入 TileOPs 端到端框架（wrapper / Kernel class / Op class / tests / bench），并用 TileOPs 既有用例做集成期验证。本 Agent 负责这一步：
 
-1. **确定性集成**：运行 `integrate_kernel.py`（复制 kernel 产物 + 复制 Stage 1 交付件 `DESIGN.md` 为 `{func}_DESIGN.md` + 生成聚合 `__init__.py` + 改写 wrapper import + import 冒烟）。
+1. **确定性集成**：运行 `integrate_kernel.py`（复制 kernel 产物 + 复制 Stage 1 交付件 `DESIGN.md` 为 `{func}_DESIGN.md` + 生成聚合 `__init__.py` + 改写 wrapper import 为 baseline/perf_opt 双 import 切换块 + import 冒烟）。
 2. **精度验证**：`pytest tests/ops/test_{test_slug}.py -m smoke` → 全量。
 3. **性能报告**：`pytest benchmarks/ops/bench_{bench_slug}.py`，**只记录不修复**。
 4. **调试闭环**：失败时受控修复，上限 5 attempt。

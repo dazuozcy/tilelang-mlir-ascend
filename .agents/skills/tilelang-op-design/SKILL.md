@@ -135,9 +135,9 @@ description: "根据算子需求生成 TileLang-NPUIR 算子设计文档（DESIG
      - 融合（如 flash attention = GEMM + softmax + GEMM）→ 核间协作、流水线
    - **动态 shape 判定**：是否存在运行时才确定的维度
 4. **非整除场景预判**：检查输入 shape 是否可能不被 block size 整除。GEMM 类算子的 `M // block_M` 和 `N // block_N` 在 `M < block_M` 或 `N < block_M` 时产生零 block 或不完整 tile，必须在设计中明确处理策略（host 侧 zero-padding + crop，或 Kernel 内动态 block size）
-5. **分核策略预判（物理核数适配）**⭐：按 block 初步取值计算逻辑核数 `ceil(M/block_M) × ceil(N/block_N)`，与目标设备物理核数（A2 系列 Cube 核约 20~24 个、Vector 核数量翻倍；优先通过设备接口获取，采用文档假设时必须显式标注）比较：
+5. **分核策略预判（物理核数适配）**⭐：先实际查询目标设备物理核数——`from tilelang.utils import NPUUtils; NPUUtils.get().get_aicore_num()`（Cube/混合算子直接使用返回值；纯 Vector 算子核数翻倍，即 `get_aicore_num() * 2`；**禁止以文档假设或经验值（如 20~24）替代实查**，查询失败即无 NPU 环境时明确报告环境异常、不得猜测数值）；再按 block 初步取值计算逻辑核数 `ceil(M/block_M) × ceil(N/block_N)`，与查得的物理核数比较：
    - **逻辑核数 ≤ 物理核数**：结论"无需适配"，给出依据；
-   - **中等规模**：通过增大 block_M/block_N 减少内核总数，使其接近物理核数整数倍（如 20/40/60），避免负载不均（如启动 21 个内核将导致其中一个物理核执行两倍任务）；
+   - **中等规模**：通过增大 block_M/block_N 减少内核总数，使其接近物理核数整数倍（按实查核数取 1×/2×/3×），避免负载不均（如启动 21 个内核将导致其中一个物理核执行两倍任务）；
    - **极大规模**（无法通过调整分块缩减核数）：固定启动内核数 = 物理核数，每个物理核内 `T.serial` 串行处理多个逻辑块任务（`num_local_tasks = T.ceildiv(num_logical_kernels - kernel_id, num_physical_kernels)`），摊薄核启动开销；循环边界必须为静态值。
    - 依据：docs/开发指南.md §3.3「物理核数限制与分核策略优化」。
 

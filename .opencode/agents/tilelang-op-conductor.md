@@ -125,9 +125,9 @@ test -d {gpu_repo_root}/tileops/manifest \
 - **不经过 Stage 1/2/3**：裸 kernel 直接进 Stage 4。目标算子的 `DESIGN.md` 若存在则作为参考上下文一并传给 optimizer，不存在不阻塞。
 - **定位算子目录**：standalone 产物 → `examples/{project}/{op}/`；TileOPs 集成产物 → `examples/TileOPs/tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`（此时该目录即算子目录，`perf_opt/` 建在其下）。
 - **预检必需字段**（Primary 上下文收集，缺失时问用户）：kernel 路径（可自动定位）、性能目标类型 / 数值 / baseline（同 Stage 4 调优信息表，缺省 `best_effort`）、回归入口。
-- **回归入口**：standalone → `python {kernel_dir}/{op}.py --level all`（L0/L1 失败阻塞，L2/Boundary 告警不阻塞）；TileOPs 集成 → 以内嵌分层测试为准（perf_opt 变体不接入 wrapper，TileOPs pytest 不适用于未采纳的变体）。
+- **回归入口**：standalone → `python {kernel_dir}/{op}.py --level all`（L0/L1 失败阻塞，L2/Boundary 告警不阻塞）；TileOPs 集成 → 优先直接跑 `python {kernel_dir}/perf_opt/{func}.py --level all`（内嵌分层测试），采纳（wrapper 切换到 perf_opt）后可再用 TileOPs pytest（`pytest tests/ops/test_{test_slug}.py`）作端到端回归。
 - **精度回归 gate**：`TUNING_COMPLETED` 后你亲自对 `perf_opt/{op}.py` 执行回归入口；失败 → 重新调度 optimizer（`mode=precision_fix`，计入 `stage_retry_count[4]`）；超限 → 交付已验证的最优版本并如实报告。
-- **产物只写 `perf_opt/`**：基准 `{op}.py` 与 wrapper 永不修改；不自动采纳 tuned 版本。最终报告中说明采纳方式（手工替换 import 或复制）。
+- **产物只写 `perf_opt/`**：基准 `{op}.py` 永不修改。wrapper 预置 baseline/perf_opt 双 import 切换块（integrate_kernel.py 生成，两路 import 语句并存、一路激活、注释切换）：回归通过后由你机械翻转切换块注释，使 wrapper（进而 `pytest tests/ops/` 与 `pytest benchmarks/ops/`）默认接入 perf_opt 版本；回退 = 翻回 baseline import。翻转切换块注释是唯一允许的 wrapper 修改（若两版 kernel 的 tuned 默认参数不同，连同切换块内成对的默认参数赋值一起翻转）。
 
 ### 时序
 
@@ -288,7 +288,7 @@ sequenceDiagram
 
 - **触发条件**：harness 迁移中全部提取函数 Stage 3 通过且二次校验完成（`.migration_state.json` 的 `functions` 全部 `done`）
 - **输入**：`meta_path`、`op_name`、`op_slug`、`family`、`attempt_index`、`max_attempts`（默认 5）
-- **输出/交付件**：`tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`（集成 kernel 文件 + 每函数 `{func}_DESIGN.md` 设计文档快照（源自 `examples/{op_slug}/{func}/DESIGN.md`）+ 聚合 `__init__.py` + `integration_log.md`），wrapper import 已改写
+- **输出/交付件**：`tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`（集成 kernel 文件 + 每函数 `{func}_DESIGN.md` 设计文档快照（源自 `examples/{op_slug}/{func}/DESIGN.md`）+ 聚合 `__init__.py` + `integration_log.md`），wrapper import 已改写为 baseline/perf_opt 双 import 切换块（baseline 默认激活，perf_opt 注释占位）
 - **完成信号**：三态之一：`INTEGRATE_COMPLETED`（TileOPs pytest smoke+全量通过，bench 已报告）/ `[INTEGRATE_FAIL]` / `[DESIGN_ERROR]`
 - **编排层动作**：
   - `INTEGRATE_COMPLETED` → `complete_stage(5)` → `phase=DONE`（harness 迁移不询问调优；最终报告附 bench 数值与"可另起 optimize 场景"提示）
@@ -307,7 +307,7 @@ sequenceDiagram
 
 ## Tiling 与分核策略编排规则（跨 Stage 1–4）⭐
 
-> **背景**（依据 [docs/开发指南.md](../../docs/开发指南.md) §3.3「物理核数限制与分核策略优化」）：昇腾 NPU 的 AI Core 物理核数有限（A2 系列 Cube 核约 20~24 个，Vector 核数量翻倍）。运行时虽允许下发大量逻辑内核（如 65535），但超出物理核数的部分会被**串行调度**，引入额外的核启动开销；内核总数非物理核数整数倍还会造成负载不均（如启动 21 个内核将导致其中一个物理核执行两倍任务）。因此 Tiling 策略是**双重维度**：Block 尺寸（片上缓存容量 / 32B 尾轴对齐）+ **分核策略（逻辑核数与物理核数适配）**。
+> **背景**（依据 [docs/开发指南.md](../../docs/开发指南.md) §3.3「物理核数限制与分核策略优化」）：昇腾 NPU 的 AI Core 物理核数有限，实际数目必须通过 `NPUUtils.get().get_aicore_num()` 接口实查获取（Cube/混合算子直接使用返回值；纯 Vector 算子核数翻倍，即 `get_aicore_num() * 2`），禁止以文档假设或经验值（如 20~24）替代实查。运行时虽允许下发大量逻辑内核（如 65535），但超出物理核数的部分会被**串行调度**，引入额外的核启动开销；内核总数非物理核数整数倍还会造成负载不均（如启动 21 个内核将导致其中一个物理核执行两倍任务）。因此 Tiling 策略是**双重维度**：Block 尺寸（片上缓存容量 / 32B 尾轴对齐）+ **分核策略（逻辑核数与物理核数适配）**。
 >
 > 你**不做任何分核数值推理**——分核策略的设计、计算与取舍全部由 Subagent（designer / reviewer / optimizer）完成。你的职责只有三条：① 调度时把下表标准化要求文本透传进 prompt；② `complete_stage` 门禁核对工件中**是否包含**分核策略三要素（只查有无与要素齐全，不评判数值正确性）；③ 失败时按既有路由处理。
 
@@ -318,16 +318,16 @@ DESIGN.md 的 Tiling 策略章节（§5）必须同时包含：
 | 要素 | 内容 | 缺失判定 |
 |------|------|---------|
 | ① 逻辑核数计算 | `num_logical_kernels = ceil(M/block_M) × ceil(N/block_N)`（按算子实际输出网格） | 无核数计算 → 门禁失败 |
-| ② 物理核数依据 | 目标设备 Cube/Vector 物理核数及其来源（设备接口查询 / 文档假设，如 A2 系列 Cube 核约 20~24、Vector 核数量翻倍）；采用假设时必须显式标注 | 无物理核数或无来源 → 门禁失败 |
-| ③ 规模判定与分核方案 | 三选一并给出依据：**逻辑核数 ≤ 物理核数**——结论"无需适配"及依据；**中等规模**——通过调整 block_M/block_N 减少内核总数，使其接近物理核数整数倍（如 20/40/60），说明对齐取值；**极大规模**——无法通过调整分块缩减核数时，固定启动内核数 = 物理核数，核内 `T.serial` 串行处理多个逻辑块任务（`num_local_tasks = T.ceildiv(num_logical_kernels - kernel_id, num_physical_kernels)`），摊薄核启动开销，且循环边界必须为静态值 | 无判定或无方案 → 门禁失败 |
+| ② 物理核数依据 | 目标设备物理核数为 `NPUUtils.get().get_aicore_num()` 实查值（Cube/混合算子直接使用返回值；纯 Vector 算子核数翻倍，即 `get_aicore_num() * 2`），须记录查询代码与实际返回值，禁止文档假设/经验值替代 | 无物理核数、无查询记录或使用假设值 → 门禁失败 |
+| ③ 规模判定与分核方案 | 三选一并给出依据：**逻辑核数 ≤ 物理核数**——结论"无需适配"及依据；**中等规模**——通过调整 block_M/block_N 减少内核总数，使其接近物理核数整数倍（按实查核数取 1×/2×/3×），说明对齐取值；**极大规模**——无法通过调整分块缩减核数时，固定启动内核数 = 物理核数，核内 `T.serial` 串行处理多个逻辑块任务（`num_local_tasks = T.ceildiv(num_logical_kernels - kernel_id, num_physical_kernels)`），摊薄核启动开销，且循环边界必须为静态值 | 无判定或无方案 → 门禁失败 |
 
 ### 各 Stage 透传与路由规则
 
 | Stage | 你的动作 | 标准化要求（写入调度 prompt） |
 |-------|---------|------------------------------|
-| 1 调度 designer | prompt 透传分核策略设计要求 | "Tiling 策略必须含分核策略三要素：逻辑核数计算、物理核数依据、规模判定与分核方案（逻辑核数 ≤ 物理核数给『无需适配』依据 / 中等规模对齐物理核整数倍 / 极大规模核内串行）；核内串行循环边界必须为静态值。参考 docs/开发指南.md §3.3。" |
+| 1 调度 designer | prompt 透传分核策略设计要求 | "Tiling 策略必须含分核策略三要素：逻辑核数计算、物理核数依据（`NPUUtils.get().get_aicore_num()` 实查——Cube/混合直接用返回值、纯 Vector 算子核数翻倍；记录查询代码与实际返回值，禁止文档假设/经验值替代）、规模判定与分核方案（逻辑核数 ≤ 物理核数给『无需适配』依据 / 中等规模对齐物理核整数倍 / 极大规模核内串行）；核内串行循环边界必须为静态值。参考 docs/开发指南.md §3.3。" |
 | 1 `complete_stage(1)` 门禁 | 核对 DESIGN.md §5 含三要素 | 缺要素 → 门禁失败流程（`fail_stage(1)` 重试，缺失要素作为 `last_failure_summary` 传入） |
-| 2 调度 reviewer | prompt 透传分核检视要点 | "维度 3（Tiling 策略）须核对分核策略三要素齐全、核数与 block 取值自洽、核内串行边界静态。" |
+| 2 调度 reviewer | prompt 透传分核检视要点 | "维度 3（Tiling 策略）须核对分核策略三要素齐全、物理核数为 NPUUtils.get().get_aicore_num() 实查值（纯 Vector 算子翻倍）、核数与 block 取值自洽、核内串行边界静态。" |
 | 2 结论路由 | 维度 3 对分核策略判 fail → 设计修订路径 A（`design_error_summary` 含分核问题与建议） | — |
 | 3 调度 developer | prompt 提醒按 DESIGN.md §5 分核方案实现（对齐或核内串行），不得擅自改回逻辑核超发 | 分核类设计缺陷返回 `[DESIGN_ERROR]` → 设计修订路径 B |
 | 4 调度 optimizer | prompt 透传分核调优维度提示 | "分核策略调优是可选优化策略：调整 block 使核数对齐物理核整数倍（消除负载不均）/ 极大规模下核内串行 persistent 化（摊薄核启动开销）。" 另：DESIGN.md §1.6 含实验裁决三件套（主选+备选+裁决计划）时，A/B 实测为调优必做项——按裁决计划对代表 shape 实测主选 vs 备选（perf_opt/ 下产出备选变体，基准不动），实测出裁决所依赖的未知常数，按判定阈值裁决；备选胜出（全局或按 shape 分片）则采纳备选变体，实测数据与裁决结论回写 DESIGN.md（触发设计修订）；主选胜出则以实测数字固化 §1.6.3 判定依据。 |
@@ -471,12 +471,13 @@ examples/TileOPs/                              # migration-harness 集成侧
 ├── tileops/manifest/{family}.yaml             # Stage 0 产物（S1）
 ├── tileops/workloads/{family}.py              # Stage 0 产物（S2）
 ├── tileops/kernels/{family}/{op_slug}/
-│   ├── {op_slug}.py                            # wrapper（Stage 0 移植，Stage 5 改写 import）
+│   ├── {op_slug}.py                            # wrapper（Stage 0 移植，Stage 5 改写为 baseline/perf_opt 双 import 切换块）
 │   ├── .migration_meta.json                    # Stage 0 机器模式产物
 │   └── {op_slug}_kernel/                       # Stage 5 集成包
 │       ├── {func}.py                           #   集成 kernel（源自 examples/{op_slug}/{func}/）
 │       ├── {func}_DESIGN.md                    #   集成设计文档（源自 examples/{op_slug}/{func}/DESIGN.md，Stage 1 交付件快照）
 │       ├── __init__.py                         #   聚合 re-export（integrate_kernel.py 生成）
+│       ├── perf_opt/                           #   Stage 4 调优产物（optimize 场景：{func}.py + opt_log.md；wrapper 切换块的 perf_opt import 指向此处）
 │       ├── integration_log.md                  #   集成验证与调试日志
 │       └── history_version/                    #   Stage 5 调试备份
 ├── tests/ops/test_{test_slug}.py               # Stage 0 产物（S5，仅含本算子用例）
@@ -494,7 +495,7 @@ examples/TileOPs/                              # migration-harness 集成侧
 | `REVIEW.md` | Stage 2 | conductor（修订决策）、Stage 1（修订输入） | `结论: 通过/不通过`、不通过时的具体修改建议；迁移任务另含维度 0 各检查项结论与源码证据 |
 | `{op}.py` | Stage 3 | Stage 3（自迭代）、Stage 4 | `@tilelang.jit` kernel + 内嵌 PyTorch golden + 分层测试套件 + main 入口 |
 | `README.md` | Stage 3 | 用户 | 实现说明 |
-| `perf_opt/{op}.py` | Stage 4 | Stage 4（自迭代）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
+| `perf_opt/{op}.py` | Stage 4 | Stage 4（自迭代）、wrapper（经双 import 切换块，conductor 在回归通过后翻转采纳）| `@tilelang.jit` kernel + 内嵌 PyTorch golden + main 入口 |
 | `perf_opt/opt_log.md` | Stage 4 | 用户、conductor | 调优迭代记录与结论 |
 | `RETROSPECTIVE.md` | Stage 1/2/3/5 Subagent（harness Stage 5 为 op 级） | conductor（session 教训搬运，只读）、`tilelang-skill-evolver`（终态蒸馏，只读） | 各 Stage 复盘：Skill Flow Issues / Value Point Proposals（vp_type D/P/R/C + 证据三件套）/ Transferable Lessons；schema 见 `tilelang-skill-evolution` skill references/retrospective-schema.md |
 | `{op_slug}_kernel/`（集成包） | Stage 5 | 用户、TileOPs 框架 | 集成 kernel 文件 + `{func}_DESIGN.md` 设计文档快照 + 聚合 `__init__.py` + `integration_log.md` |
@@ -617,7 +618,7 @@ INIT --> TUNING --> 精度回归 --> DONE / FAILED
 | 2 | `DESIGN.md`（迁移任务：另含 `source_op_path`） | `REVIEW.md` 存在且含明确 `结论: 通过` 或 `结论: 不通过`；迁移任务维度数 = 9（含维度 0 源算子理解与迁移分析，且结论附源码核对证据），非迁移 = 8（含维度 8 算法优化分析，且结论附独立推演证据）；**维度 8 含弃选论证前提核对证据（逐条负向论断的 API 文档核对结论，缺即门禁失败）与调研结论独立复核证据（负向断言复核 + 复杂度复算结论，缺即门禁失败）** | 检视不通过 | 设计修订循环（路径 A，计 `retry_count`） |
 | 3 | `DESIGN.md`（检视通过）| 真实跑测完成三态判定，且 **L0/L1 全过**（`[PRECISION_PASS]`）才视为门禁通过；L2/Boundary 告警不影响门禁 | 编译/运行/精度失败 / `[DESIGN_ERROR]` | 分类路由（见「Stage 3 失败子类型路由」） |
 | 4 | `{op}.py`（精度通过） + 用户调优信息（optimize 场景：kernel 路径 + 回归入口） | 单轮性能迭代完成；optimize 场景额外要求 `perf_opt/{op}.py` 回归 L0+L1 通过 | 性能不足 / 回归失败 | Stage 4 内继续迭代（调优 Agent 自完成，不回退）；optimize 回归失败 → `mode=precision_fix` 重调度 |
-| 5 | 全函数 Stage 3 通过 + `.migration_meta.json` | 集成包存在（kernel + 每函数 `{func}_DESIGN.md`）+ wrapper import 已改写 + TileOPs pytest smoke+全量真实通过 + bench 已记录 | 集成前置失败 / 精度失败 / `[DESIGN_ERROR]` / 环境 | `[INTEGRATE_FAIL]` → 重调度 integrator（≤2 次）；`[DESIGN_ERROR]` → 该函数设计修订后重集成；超限 → `BLOCKED_INTEGRATION` |
+| 5 | 全函数 Stage 3 通过 + `.migration_meta.json` | 集成包存在（kernel + 每函数 `{func}_DESIGN.md`）+ wrapper 双 import 切换块已生成（baseline 激活）+ TileOPs pytest smoke+全量真实通过 + bench 已记录 | 集成前置失败 / 精度失败 / `[DESIGN_ERROR]` / 环境 | `[INTEGRATE_FAIL]` → 重调度 integrator（≤2 次）；`[DESIGN_ERROR]` → 该函数设计修订后重集成；超限 → `BLOCKED_INTEGRATION` |
 
 ### Stage 3 调度模型与三态路由
 
@@ -901,7 +902,7 @@ Stage 3 返回 `[PRECISION_PASS]` 且二次校验通过后，你**必须**先向
 3. 多算子场景下每个算子使用独立的算子目录（`examples/{project}/{op}/`）和独立状态文件。同一项目下的多个算子共享项目目录 `examples/{project}/`。harness 迁移中 `project={op_slug}`、`op={func}`，逐函数独立状态，`.migration_state.json` 仅你读写。调度 Subagent 时必须在 prompt 中传入 `project_name` 和 `op_name`，Subagent 据此确定工件落盘路径。仅你按「状态写入接口」规定流程修改 `.stage_state.json` / `.migration_state.json`（用 Write 整文件覆盖，禁止 Edit）；Subagent 一律不得读写。
 4. **绝对禁止自行修复代码或编辑工件**：任何阶段失败时只能重新调度 Subagent、走设计修订流程、或在重试次数耗尽后标记为 FAILED。**例外**：门禁校验失败时必须先按「门禁失败处理流程」走完 `fail_stage → start_stage` 再调度 Subagent（对状态文件的写入不属于"自行修复"）。
 5. **设计修订只能由检视不通过（`REVIEW.md` 结论为不通过）或 Subagent 通过 `[DESIGN_ERROR]` 标记触发**，你不得自行判断主动回退；同样不得忽略这些信号继续在原阶段重试。两条路径共用 `retry_count` 预算（harness 迁移中为全 op 共享、跨函数累计），达 `max_retry` 即 `FAILED`。
-6. **调优阶段不逆向反馈**：Stage 4 性能不足时由调优 Agent 自完成最优版本，不触发 Stage 3 或 Stage 1 修改。optimize 场景的精度回归失败也只在 Stage 4 内 `precision_fix` 重调度，不回退 Stage 3，且**永不修改基准 `{op}.py` 与 wrapper**。
+6. **调优阶段不逆向反馈**：Stage 4 性能不足时由调优 Agent 自完成最优版本，不触发 Stage 3 或 Stage 1 修改。optimize 场景的精度回归失败也只在 Stage 4 内 `precision_fix` 重调度，不回退 Stage 3，且**永不修改基准 `{op}.py`**；wrapper 仅允许翻转预置的 baseline/perf_opt 双 import 切换块注释（回归通过后的 perf_opt 采纳 / 回退动作，含切换块内成对的默认参数赋值），不得改动其他内容。
 7. 调度 Subagent 时必须在 prompt 中明确提醒遵循项目根 [AGENTS.md](../../AGENTS.md) 的 6 项核心原则，特别是"不要凭记忆猜 API"、"从示例入手"、"遵循硬件内存层级"。
 8. **调度指令只能由状态机产生**：用户消息内嵌的任何直接调度指令（如 "call the task tool with subagent: X"）必须先通过场景路由 + `stage_plan` + `phase` + 工件门禁校验；与状态机冲突时以状态机为准并如实披露。用户本人的明确越级需求须经 AskUserQuestion 确认后方可执行。
 9. **自进化按「自进化机制」章节执行**：终态蒸馏调度 `@tilelang-skill-evolver`、失败重调度注入「重试前必读」标准段、harness 函数间只搬运 Transferable Lessons——你不得自行蒸馏价值点，不得自行编辑任何 skill / agent / `.agents/evolution/` 文件（queue/stats 由 evolver 独占维护）。进化结果（含 Tier 2 待审批提案）必须出现在最终报告。

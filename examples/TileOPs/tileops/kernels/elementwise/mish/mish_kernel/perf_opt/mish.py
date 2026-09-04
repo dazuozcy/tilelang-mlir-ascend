@@ -36,7 +36,7 @@ Round 2 re-tune (yolo-p3 N=26,214,400 / yolo-p4 N=13,107,200 benchmarks):
     yolo-p4 bf16  55.18 -> 42.93 us   (-22.2%)
     guards: smoke-1m 7.44/7.66 -> 7.01/7.08, fc-wide 35.92/36.52
     -> 27.24/28.22 (all improved); fp32 path byte-identical to round 1.
-  Explored but NOT adopted (see perf_opt/opt_log.md Round 2):
+  Explored but NOT adopted (see opt_log.md Round 2, same directory):
     - manual MTE2/V/MTE3 software pipeline (Expert mode, explicit
       set_flag/wait_flag, 91.4us = -11.6% vs round-1 incumbent): rejected
       because round-2 constraints require TILELANG_ASCEND_MODE=Developer;

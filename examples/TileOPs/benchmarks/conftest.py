@@ -27,9 +27,11 @@ def pytest_sessionstart(session):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    prof_mode = os.environ.get("TILEOPS_PROF_MODE", "events")
+    prof_mode = os.environ.get("TILEOPS_PROF_MODE", "msprof")
     BenchmarkReport.set_prof_mode(prof_mode)
-    BenchmarkReport.dump("profile_run.log")
+    # Dumps to profile_run_{prof_mode}_{timestamp}.log (timestamp fixed at
+    # session start, shared with per-op roofline appends).
+    BenchmarkReport.dump()
 
 
 @pytest.hookimpl(hookwrapper=True)

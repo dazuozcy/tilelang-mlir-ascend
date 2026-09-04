@@ -123,7 +123,7 @@ conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为：
 | 编程模式选型 | 明确 Developer / Expert / 混合，并给出理由 | 返回 fail + `missing_section: 编程模式` |
 | API 映射 | 列出至少 1 条具体的 TileLang DSL API 到计算逻辑的映射（含函数名与参数） | 返回 fail + `missing_section: API 映射` |
 | 内存层级规划 | 完整描述 GM → L1/UB → L0 的数据搬运路径 | 返回 fail + `missing_section: 内存规划` |
-| Tiling 策略 | 给出 Block 划分与 Tile Shape，对 GEMM 类必须包含非整除处理策略；且必须包含**分核策略三要素**：① 逻辑核数计算（`ceil(M/block_M) × ceil(N/block_N)`）、② 物理核数及来源（设备接口 / 显式标注的文档假设，如 A2 系列 Cube 核约 20~24、Vector 核数量翻倍）、③ 规模判定与分核方案（逻辑核数 ≤ 物理核数给"无需适配"依据 / 中等规模对齐物理核整数倍（如 20/40/60）/ 极大规模核内 `T.serial` 串行且循环边界静态；依据 docs/开发指南.md §3.3） | 返回 fail + `missing_section: Tiling`（缺分核要素时 `missing_subsection: 分核策略`） |
+| Tiling 策略 | 给出 Block 划分与 Tile Shape，对 GEMM 类必须包含非整除处理策略；且必须包含**分核策略三要素**：① 逻辑核数计算（`ceil(M/block_M) × ceil(N/block_N)`）、② 物理核数及来源（`NPUUtils.get().get_aicore_num()` 实查——Cube/混合直接用返回值、纯 Vector 算子核数翻倍；须记录查询代码与实际返回值，禁止文档假设/经验值替代）、③ 规模判定与分核方案（逻辑核数 ≤ 物理核数给"无需适配"依据 / 中等规模对齐物理核整数倍（按实查核数取 1×/2×/3×）/ 极大规模核内 `T.serial` 串行且循环边界静态；依据 docs/开发指南.md §3.3） | 返回 fail + `missing_section: Tiling`（缺分核要素或物理核数非实查（无查询记录/使用假设值）时 `missing_subsection: 分核策略`） |
 | 循环与调度结构 | 明确 T.Parallel / T.serial / T.Pipelined / T.Persistent 的选择 | 返回 fail + `missing_section: Loop 结构` |
 | 同步策略 | 与编程模式匹配（Developer 用自动同步、Expert 标明手动同步点） | 返回 fail + `missing_section: 同步` |
 | 验证方案 | 含 golden 函数草案（PyTorch 参考实现） | 返回 fail + `missing_section: 验证方案` 或 `missing_l0_plan` |

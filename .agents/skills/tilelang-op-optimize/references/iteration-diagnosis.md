@@ -43,8 +43,7 @@
 - `{op}.py`、current best 或当前实验分支 `perf_opt/{op}_opt_v{iter}_{opt_id}.py`。
 - `DESIGN.md` 中的性能目标章节。
 - [hardware-context.md](hardware-context.md) 中的硬件上下文。
-- 按 [profile-collection.md](profile-collection.md) 轻量多 dispatch 规则采集到的目标 kernel profiling 结果。
-- 触发调度结构分析时，同一 workload 下的 NPU event median。
+- 按 [profile-collection.md](profile-collection.md) 轻量多 dispatch 规则采集到的目标 kernel profiling 结果（`msprof op` 是唯一时延口径）。
 - `perf_opt/opt_log.md` 中的 `Performance Test Data` 最小表。
 - 已尝试过的优化点、实验分支结果、keep/rollback 结论和最新 current best。
 
@@ -63,8 +62,6 @@ dispatch_path 与 workload_id 已记录
 target_kernel_name 来自当前要优化的 TileLang kernel
 captured_op_name 能追溯到 target_kernel_name 或目标 TileLang kernel
 Task Duration 来自 OpBasicInfo.csv 中 captured_op_name 对应记录
-触发调度结构分析时，NPU event median 已记录
-event 用于排序时，event_quality / pass / anchor 漂移状态已记录
 不是 Cast / Mul / OnesLike / Random 等框架小算子
 raw_profile_dir 存在且能追溯到本次 command
 同一轮采集未出现并发 msprof op 或输出目录覆盖
@@ -82,9 +79,6 @@ raw_profile_dir 存在且能追溯到本次 command
 
 ```text
 Task Duration(us)
-NPU event median(us)，若已采集
-event / Task Duration 差距，若已采集
-event_quality：valid / flat_response / noisy_invalid，若已采集
 Current Freq / Rated Freq
 Block Dim / Mix Block Dim
 AI Core Count per NPU
@@ -107,21 +101,7 @@ num_cores、iters_per_task、min/max iters、imbalance，若使用 T.serial 多�
 GM 读写总字节数
 理论 memory-bound 时间
 Task Duration 与理论时间差距
-event 与 Task Duration 是否明显背离
 ```
-
-若 event / runner 时间明显大于 `msprof Task Duration`（例如超过 2x），不要只归因于 kernel 内部。先补充 host 侧诊断：
-
-```text
-host_submit 时间
-Block Dim / grid block 数
-workspace bytes，若 runner 或 launcher 能暴露
-event 与 Task Duration 的比例
-cProfile / runtime trace 中 rtMalloc、rtFree、kernel launch wrapper 的占比
-host_submit 与 Block Dim 是否近似线性
-```
-
-若 host_submit 随 `Block Dim` 线性增长，优先匹配 `BP_launch_overhead` 下的 `BP_launcher_workspace_alloc` 子模式；这类问题的缓解动作通常仍是降低 `Block Dim`，但原因是 host launcher workspace 分配/释放，而不只是 device 侧 block 调度。
 
 ### 代码结构观察
 
@@ -228,7 +208,7 @@ perf_opt/mish_opt_v2_op3.py
 
 如果某个优化点本质上是参数选择，可以在该分支内做小范围参数实验；但搜索空间必须服务同一个优化点，不能混入其它结构性改动。
 
-结构性优化分支通过正确性且方向有效后，不能只保留单个手写配置。必须围绕该结构暴露的关键参数做一轮 coarse autotune 或等价手动粗搜；例如 `T.serial` 多块迭代至少搜索 `block_size × num_cores`。autotune winner 不是最终结论，还要检查 top-k 配置和 winner 邻域，必要时手动/脚本精搜，再用最终 winner 进入 `msprof op` 和必要的 NPU event 复测。
+结构性优化分支通过正确性且方向有效后，不能只保留单个手写配置。必须围绕该结构暴露的关键参数做一轮 coarse autotune 或等价手动粗搜；例如 `T.serial` 多块迭代至少搜索 `block_size × num_cores`。autotune winner 不是最终结论，还要检查 top-k 配置和 winner 邻域，必要时手动/脚本精搜，再用最终 winner进入 `msprof op` 复测。
 
 若优化点涉及 `num_cores / T.serial` 多块迭代，不能只测一个配置。先计算 `num_logical=ceildiv(N, block_size)`，再构造候选：
 
@@ -237,7 +217,7 @@ perf_opt/mish_opt_v2_op3.py
 - `num_logical` 附近可整除或低 imbalance 的候选，记录 `min_iters_per_task / max_iters_per_task`。
 - 当前 flat-grid 端点只作对照，不默认作为 winner。
 
-每个配置都记录 `msprof Task Duration`、NPU event median、`event_quality` 和 imbalance。event 用于粗筛左端并发不足和右端派发开销；若甜点区内 event 差异小于噪声阈值，标记 `flat_response`，用 `msprof Task Duration` 决胜。
+每个配置都记录 `msprof Task Duration` 和 imbalance。若甜点区内 `Task Duration` 差异小于噪声阈值，先用更大 `launch-count` 复测；复测后仍打平时用 imbalance、整除性和资源占用决胜，不要用单次 msprof 结果对平区内候选排序。
 
 ---
 
@@ -248,14 +228,13 @@ perf_opt/mish_opt_v2_op3.py
 ```text
 L0 精度回归
 msprof op 性能采集
-必要时采集 NPU event median
 profile 有效性校验
 ```
 
 评估规则：
 
 - 只比较同一 `(dispatch_path, workload_id)` 下的 valid profile。
-- 有一个或多个分支提升时，先按本轮主指标选择候选 winner；kernel 内部优化默认看 `Task Duration(us)`。调度结构优化必须确认 event 不明显回退；若 event 清晰改善，优先保留；若 event 打平或 `flat_response`，用 `msprof Task Duration` 决胜；若 `msprof` 也打平，再用 imbalance、UB/L0 余量和代码复杂度决胜。
+- 有一个或多个分支提升时，先按本轮主指标（`msprof op Task Duration(us)`）选择候选 winner；Task Duration 打平时，用 imbalance、UB/L0 余量和代码复杂度决胜。
 - 候选 winner 如果会影响多个 dispatch path，必须补测或复用有效记录确认必测 dispatch 没有超过噪声阈值的性能回退。
 - 只有通过必测 dispatch 非回退检查的候选 winner，才能更新为全局 current best。
 - 如果某分支只在目标 dispatch 提升，但其它必测 dispatch 明显回退，记录为 rollback 或 defer，不更新全局 current best。
@@ -282,9 +261,6 @@ profile 有效性校验
 #### Profile Facts
 
 - Task Duration: {duration_us} us
-- NPU event median: {event_or_na} us
-- event / Task Duration: {gap_or_na}
-- event_quality: {valid/flat_response/noisy_invalid/na}
 - Block Dim / AI Core Count: {block_dim} / {ai_core_count}
 - Cube / Vector / MTE2 / MTE3: {metrics}
 - UB/L0/resource indicators: {metrics}
@@ -325,9 +301,9 @@ profile 有效性校验
 
 ### Experiment Branches
 
-| branch | base | opt_id | major_change | correctness | task_duration_us | event_median_us | profile_status | result |
-|---|---|---|---|---|---:|---:|---|---|
-| {file} | {current_best} | OP1 | {change} | pass/fail | {v} | {event_or_na} | valid/invalid | improved/config_no_gain/family_no_gain/invalid/blocked |
+| branch | base | opt_id | major_change | correctness | task_duration_us | profile_status | result |
+|---|---|---|---|---|---:|---|---|
+| {file} | {current_best} | OP1 | {change} | pass/fail | {v} | valid/invalid | improved/config_no_gain/family_no_gain/invalid/blocked |
 
 ### 必测 Dispatch 检查
 
@@ -338,7 +314,7 @@ profile 有效性校验
 ### Iteration Winner
 
 - winner: {file_or_current_best}
-- reason: {本轮主指标最优；若属于调度结构分支，event 不明显回退；event 打平时已用 msprof/imbalance 决胜；且必测 dispatch 无明显回退；或无提升分支}
+- reason: {本轮主指标（msprof op Task Duration）最优，且必测 dispatch 无明显回退；或无提升分支}
 - new_current_best: {file}
 - rollback_branches: {list}
 ```
@@ -352,8 +328,7 @@ profile 有效性校验
 - 同一轮所有实验分支都必须从同一个 current best 派生。
 - 组合优化只在单点优化已经证明有效后再做。
 - 每个实验分支都必须跑 L0 精度回归。
-- 每个有效实验分支都必须用 `msprof op` 重新采集目标 kernel。
-- 调度结构类分支必须记录 NPU event median 和 `event_quality`；event 与 `msprof` 背离时，不要只凭 `msprof` 下结论；event 平区内也不要只凭单 pass event 排序。
+- 每个有效实验分支都必须用 `msprof op` 重新采集目标 kernel；候选差异落入噪声阈值时先用更大 `launch-count` 复测，不要用单次 msprof 结果对平区内候选排序。
 - 最终更新全局 current best 前，必须确认必测 dispatch 不发生超过噪声阈值的性能回退。
 - 区分 `config_no_gain` 和 `family_no_gain`；一个配置失败不能否定整类优化方向。
 - 如果所有候选优化点都不够直接，先补充 profile 或检查 profile 口径，不要盲目扩大搜索空间。

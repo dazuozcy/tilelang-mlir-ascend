@@ -225,14 +225,14 @@ graph TD
 - **优化策略**：调整 block size、分核策略调优（核数对齐物理核整数倍 / 极大规模核内串行 persistent 化）、增加 T.Pipelined 流水深度、double-buffer、v-prefix API 替换、减少中间 buffer、data reuse。
 - **中止条件**（满足任一）：迭代达上限（默认 10）/ 连续三次无提升 / 达到用户指定性能目标。
 - **调优不逆向反馈**：性能不足时由 optimizer 自完成最优版本，不回退到 Stage 3/1。
-- **optimize 场景**：裸 kernel 直接进入（`DESIGN.md` 存在则作参考）；产物只写 `perf_opt/`，基准 `{op}.py` 与 wrapper 永不修改；`TUNING_COMPLETED` 后 conductor 亲自对 `perf_opt/{op}.py` 执行回归入口（L0+L1），失败 → `mode=precision_fix` 重调度。
+- **optimize 场景**：裸 kernel 直接进入（`DESIGN.md` 存在则作参考）；产物只写 `perf_opt/`，基准 `{op}.py` 永不修改；`TUNING_COMPLETED` 后 conductor 亲自对 `perf_opt/{op}.py` 执行回归入口（L0+L1），失败 → `mode=precision_fix` 重调度；回归通过后 conductor 翻转 wrapper 的 baseline/perf_opt 双 import 切换块，使 `pytest tests/ops/` 与 `benchmarks/ops/` 默认接入 perf_opt 版本（wrapper 仅允许此注释翻转）。
 
 #### Stage 5 — 迁移集成（`tilelang-op-integrator`，仅 migration-harness）
 
 - **进入条件**：全部提取函数 Stage 3 通过且二次校验完成（`.migration_state.json` 的 `functions` 全部 `done`）。
 - **输入**：`meta_path`、`op_name`、`op_slug`、`family`、`attempt_index`、`max_attempts`（默认 5）。
-- **执行**：运行 `examples/TileOPs/.agents/skills/add-npu-op/scripts/integrate_kernel.py`（复制 kernel 产物 + 复制 Stage 1 交付件 `DESIGN.md` 为 `{func}_DESIGN.md` + 生成聚合 `__init__.py` + 改写 wrapper import + import 冒烟）→ `pytest tests/ops/test_{test_slug}.py`（smoke → 全量）→ bench 报告（只记录不修复）；失败时受控调试闭环（≤5 attempt，先备份后修改）。
-- **交付件**：`tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`（集成 kernel + `{func}_DESIGN.md` 设计文档快照 + 聚合 `__init__.py` + `integration_log.md`），wrapper import 已改写。
+- **执行**：运行 `examples/TileOPs/.agents/skills/add-npu-op/scripts/integrate_kernel.py`（复制 kernel 产物 + 复制 Stage 1 交付件 `DESIGN.md` 为 `{func}_DESIGN.md` + 生成聚合 `__init__.py` + 改写 wrapper import 为 baseline/perf_opt 双 import 切换块 + import 冒烟）→ `pytest tests/ops/test_{test_slug}.py`（smoke → 全量）→ bench 报告（只记录不修复）；失败时受控调试闭环（≤5 attempt，先备份后修改）。
+- **交付件**：`tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/`（集成 kernel + `{func}_DESIGN.md` 设计文档快照 + 聚合 `__init__.py` + `integration_log.md`），wrapper 已改写为 baseline/perf_opt 双 import 切换块（baseline 默认激活，perf_opt 注释占位）。
 - **三态判定**：`INTEGRATE_COMPLETED`（pytest smoke+全量通过，bench 已报告）/ `[INTEGRATE_FAIL]`（conductor 重调度 ≤2 次，超限 `BLOCKED_INTEGRATION`）/ `[DESIGN_ERROR]`（失败根因函数走设计修订后全量重集成）。
 
 ### 设计修订机制
@@ -364,9 +364,9 @@ examples/TileOPs/                              # 集成侧
 ├── tileops/manifest/{family}.yaml             # Stage 0 产物
 ├── tileops/workloads/{family}.py              # Stage 0 产物
 ├── tileops/kernels/{family}/{op_slug}/
-│   ├── {op_slug}.py                           # wrapper（Stage 0 移植，Stage 5 改写 import）
+│   ├── {op_slug}.py                           # wrapper（Stage 0 移植，Stage 5 改写为 baseline/perf_opt 双 import 切换块）
 │   ├── .migration_meta.json                   # Stage 0 机器模式产物
-│   └── {op_slug}_kernel/                      # Stage 5 集成包（集成 kernel + {func}_DESIGN.md + 聚合 __init__.py + integration_log.md）
+│   └── {op_slug}_kernel/                      # Stage 5 集成包（集成 kernel + {func}_DESIGN.md + 聚合 __init__.py + integration_log.md；optimize 场景的 perf_opt/ 建在其下）
 ├── tests/ops/test_{test_slug}.py              # Stage 0 产物（仅含本算子用例）
 └── benchmarks/ops/bench_{bench_slug}.py       # Stage 0 产物
 ```
@@ -482,7 +482,7 @@ harness 迁移另有 `examples/{op_slug}/.migration_state.json`（函数级聚�
 - **designer**：只生成 `DESIGN.md`，不定义下游阶段；必做算法调研（Phase R 调研四问：等价化简公式/在线算法/复杂度/硬件亲和 → §1.6.0，输入公式/源算法只是候选之一）与算法级优化设计（数学等价优化 + 循环/标量向量化替代分析 → §1.6）；迁移场景必须先完成源算子三问解读（语义/算法/优化手段）→ 算法调研 → 硬件耦合性判定 → NPU 算法重设计（§0），未读源码不得设计。
 - **design-reviewer**：只读检视 `DESIGN.md`，给出结论，**不修改 DESIGN.md**；含维度 8 算法优化分析检视（算法调研结论独立复核——负向断言对照参考表/源码证据、复杂度复算；等价性论证独立推演，不放水）；迁移场景须亲自读源码核对维度 0（源算子理解与迁移分析），不得放水。
 - **developer**：只生成 `{op}.py`，不修改上游工件，三态判定如实反映真实测试结果。
-- **optimizer**：只写 `perf_opt/`，调优不逆向反馈到 Stage 3/1；optimize 场景永不修改基准 `{op}.py` 与 wrapper。
+- **optimizer**：只写 `perf_opt/`，调优不逆向反馈到 Stage 3/1；optimize 场景永不修改基准 `{op}.py` 与 wrapper（perf_opt 采纳由 conductor 在回归通过后翻转 wrapper 双 import 切换块完成）。
 - **integrator**：只执行 Stage 5 集成验证（integrate_kernel.py + pytest + bench 报告），失败走受控调试闭环，不做全局编排。
 - **skill-evolver**：只执行价值点蒸馏与分级合入（任务工件只读；pattern-library / queue / stats 是其写域；Tier 2 流程规则仅出提案等人工审批），不做任务编排，不产生新实测数据。
 

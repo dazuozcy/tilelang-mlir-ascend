@@ -17,7 +17,7 @@ Workflow:
   4. Return the median latency in **milliseconds**.
 
 Configuration (environment variables):
-  TILEOPS_PROF_MODE           — "events" (default) or "msprof"
+  TILEOPS_PROF_MODE           — "msprof" (default) or "events"
   TILEOPS_MSPROF_KERNEL_NAME  — kernel name filter for --kernel-name
   TILEOPS_MSPROF_LAUNCH_COUNT — number of measured launches (default 10)
   TILEOPS_MSPROF_WARM_UP      — number of warm-up iterations (default 5)

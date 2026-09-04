@@ -20,6 +20,14 @@ Adaptation summary (GPU -> NPU):
     K9:  ``threads`` removed from ``default_config`` and ``forward`` call.
     K11: ``threads * npt`` collapsed into a single ``block_size`` param
          (elementwise ops only).
+
+  **Kernel source selection** (baseline vs perf_opt):
+    The kernel factory is imported from exactly one of two paths via the
+    comment toggle below: the Stage 3 baseline (``mish_kernel/mish.py``)
+    or the Stage 4 tuned version (``mish_kernel/perf_opt/mish.py``).
+    ``pytest tests/ops/test_mish.py`` and
+    ``pytest benchmarks/ops/bench_mish.py`` therefore exercise whichever
+    source is active.
 """
 
 from typing import Optional
@@ -28,7 +36,38 @@ import torch
 
 from tileops.kernels.kernel_base import Kernel
 
-from .mish_kernel.mish import mish_fwd_kernel
+# ---------------------------------------------------------------------------
+# Kernel source selection: baseline vs perf_opt (Stage 4 tuned)
+#
+# Exactly one source block below is active; toggle by swapping the comment.
+# Default policy: the perf_opt source is active once the tuned kernel
+# (``mish_kernel/perf_opt/mish.py``, tuned on Ascend 910B2C -- see
+# ``mish_kernel/perf_opt/opt_log.md``: yolo-p3 fp16 103.42 -> 78.30 us,
+# -24.3%) has passed its L0/L1 regression; the baseline (Stage 3) source
+# is active otherwise.
+#
+# NOTE: each source block also pins ``_DEFAULT_BLOCK_SIZE`` -- the two
+# kernels ship different tuned block_size defaults (Stage 3 heuristic
+# 1024/2048 vs perf_opt 8192), so the assignment must be toggled together
+# with its import.  ``pytest tests/ops/test_mish.py`` and
+# ``pytest benchmarks/ops/bench_mish.py`` dispatch through whichever
+# source is active here.
+# ---------------------------------------------------------------------------
+# --- baseline (Stage 3) ------------------------------------------------------
+# from .mish_kernel.mish import mish_fwd_kernel
+# _DEFAULT_BLOCK_SIZE = {"float32": 1024, "float16": 2048, "bfloat16": 2048}
+# --- perf_opt (Stage 4 tuned) ------------------------------------------------
+from .mish_kernel.perf_opt.mish import (
+    BLOCK_SIZE_CAST,
+    BLOCK_SIZE_FP32,
+    mish_fwd_kernel,
+)
+
+_DEFAULT_BLOCK_SIZE = {
+    "float32": BLOCK_SIZE_FP32,
+    "float16": BLOCK_SIZE_CAST,
+    "bfloat16": BLOCK_SIZE_CAST,
+}
 
 __all__ = ["MishFwdKernel"]
 
@@ -103,8 +142,9 @@ class MishFwdKernel(Kernel):
         self.output_dtype = dtype  # same_as(input)
         # Build the factory callable (does not compile yet — compilation
         # is deferred to forward() via the custom_op wrapper).  The
-        # imported function is the GPU implementation; the NPU component
-        # rewrites it for target="npuir".
+        # factory comes from the ACTIVE kernel source (baseline or
+        # perf_opt, see the source-selection toggle at the top of this
+        # file); forward() rebuilds it with the configured block_size.
         self.kernel = mish_fwd_kernel(self.N_total, self.dtype_str)
         self.init_config(config)
 
@@ -112,13 +152,16 @@ class MishFwdKernel(Kernel):
     def default_config(self) -> dict:
         """Return the default config (K11: block_size = threads * npt).
 
+        The default block_size follows the ACTIVE kernel source (see the
+        source-selection toggle at the top of this file): the Stage 3
+        heuristic (1024 fp32 / 2048 fp16-bf16) or the Stage 4 perf_opt
+        tuned value (8192, taken from the tuned module constants).
+
         GPU defaults: threads=256, npt=4 (fp32) or npt=8 (fp16/bf16).
         Collapsed: block_size = 1024 (fp32) or 2048 (fp16/bf16).
         """
         # K11: collapse threads * npt into block_size.
-        if self.dtype == torch.float32:
-            return {"block_size": 1024}  # 256 * 4
-        return {"block_size": 2048}  # 256 * 8
+        return {"block_size": _DEFAULT_BLOCK_SIZE[self.dtype_str]}
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run the Mish kernel.

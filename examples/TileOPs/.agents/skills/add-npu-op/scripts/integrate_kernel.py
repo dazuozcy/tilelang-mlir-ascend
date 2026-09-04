@@ -5,8 +5,10 @@ pipeline (``examples/{project}/{func}/{func}.py``) into the TileOPs kernel
 package (``tileops/kernels/{family}/{op_slug}/{op_slug}_kernel/``), copies
 each function's Stage 1 design doc (``DESIGN.md`` co-located with the kernel
 product) into the same package as ``{func}_DESIGN.md``, generates
-the aggregation ``__init__.py``, rewrites the wrapper import to point at the
-integrated package, and runs an import smoke test. Idempotent: re-running
+the aggregation ``__init__.py``, rewrites the wrapper import into a
+baseline/perf_opt kernel-source selection block (baseline active,
+``.{op_slug}_kernel.perf_opt.{func}`` commented out for later Stage 4
+adoption), and runs an import smoke test. Idempotent: re-running
 overwrites integrated copies and leaves an already-rewritten wrapper intact.
 A function without a co-located ``DESIGN.md`` is warned about (not fatal)
 and its kernel is still integrated.
@@ -126,7 +128,7 @@ def defining_module(name: str, integrated_files: dict[str, Path]) -> str | None:
     for stem, path in integrated_files.items():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
+        except (SyntaxError, OSError):
             continue
         for node in tree.body:
             if (
@@ -167,21 +169,73 @@ def gen_init_py(names: list[str], integrated_files: dict[str, Path], op_slug: st
     return "\n".join(lines)
 
 
-def rewrite_wrapper_import(wrapper_path: Path, extracted_module: str, op_slug: str) -> bool:
-    """Point the wrapper's .{extracted_module} import at .{op_slug}_kernel.
+def _format_import_stmt(module: str, names: list[str]) -> str:
+    """Format ``from {module} import ...``, parenthesizing long lines."""
+    single = f"from {module} import {', '.join(names)}"
+    if len(single) <= 100:
+        return single
+    body = "".join(f"\n    {n}," for n in names)
+    return f"from {module} import ({body}\n)"
+
+
+def gen_kernel_source_block(
+    names: list[str], integrated_files: dict[str, Path], op_slug: str
+) -> str:
+    """Generate the baseline/perf_opt kernel-source selection block.
+
+    The block carries both import paths side by side: the baseline import
+    (active) plus one commented perf_opt import per kernel function,
+    pointing at the future Stage 4 tuned products
+    (``{op_slug}_kernel/perf_opt/{func}.py``).  Selection is done by
+    swapping the comment; the perf_opt lines become the default once the
+    tuned kernels pass L0/L1 regression.  Per-function lines also allow
+    partial adoption (only some functions tuned).
+    """
+    header = [
+        "# ---------------------------------------------------------------------------",
+        "# Kernel source selection: baseline vs perf_opt (Stage 4 tuned)",
+        "#",
+        "# Exactly one source block below is active; toggle by swapping the comment.",
+        "# Default policy: the perf_opt source becomes active once tuned drop-in",
+        "# kernels (same factory signatures) land at",
+        f"# .{op_slug}_kernel/perf_opt/{{func}}.py and pass their L0/L1 regression;",
+        "# the baseline (Stage 3) source is active otherwise.  ``pytest tests/ops/``",
+        "# and ``pytest benchmarks/ops/`` dispatch through whichever source is",
+        "# active here.",
+        "# ---------------------------------------------------------------------------",
+        "# --- baseline (Stage 3) ------------------------------------------------------",
+    ]
+    baseline = [_format_import_stmt(f".{op_slug}_kernel", names)]
+    perf = ["# --- perf_opt (Stage 4 tuned) ------------------------------------------------"]
+    for name in names:
+        stem = defining_module(name, integrated_files) or name
+        perf.append(f"# from .{op_slug}_kernel.perf_opt.{stem} import {name}")
+    return "\n".join(header + baseline + perf)
+
+
+def rewrite_wrapper_import(
+    wrapper_path: Path, extracted_module: str, op_slug: str, integrated_files: dict[str, Path]
+) -> bool:
+    """Replace the wrapper's .{extracted_module} import with the kernel
+    source selection block (baseline active, perf_opt commented out).
 
     Returns True when a rewrite happened, False when already integrated.
     """
     text = wrapper_path.read_text(encoding="utf-8")
     if re.search(rf"from \.{op_slug}_kernel(?:\.\w+)?\s+import", text):
         return False
-    pattern = rf"from \.{re.escape(extracted_module)}\s+import"
-    if not re.search(pattern, text):
+    stmt_re = re.compile(rf"from \.{re.escape(extracted_module)}\s+import\s*(?:\([^)]*\)|[^\n]*)")
+    m = stmt_re.search(text)
+    if not m:
         raise SystemExit(
             f"[error] wrapper {wrapper_path} has no 'from .{extracted_module} import'; "
             f"check --extracted-module or edit the wrapper manually"
         )
-    text = re.sub(pattern, f"from .{op_slug}_kernel import", text)
+    names = parse_wrapper_imports(wrapper_path, extracted_module)
+    if not names:
+        names = list(integrated_files)
+    block = gen_kernel_source_block(names, integrated_files, op_slug)
+    text = text[: m.start()] + block + text[m.end() :]
     wrapper_path.write_text(text, encoding="utf-8")
     return True
 
@@ -329,10 +383,14 @@ def main() -> None:
         print("[ok] dry run complete")
         return
 
-    rewritten = rewrite_wrapper_import(wrapper_path, extracted_module, op_slug)
+    rewritten = rewrite_wrapper_import(wrapper_path, extracted_module, op_slug, integrated)
     print(
         f"[wrapper] {wrapper_path} "
-        f"{'rewritten -> .' + op_slug + '_kernel' if rewritten else 'already integrated'}"
+        + (
+            "rewritten -> baseline/perf_opt kernel-source selection block"
+            if rewritten
+            else "already integrated"
+        )
     )
 
     ok, out = (

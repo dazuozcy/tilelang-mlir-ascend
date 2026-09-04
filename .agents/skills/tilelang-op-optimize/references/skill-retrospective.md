@@ -14,7 +14,7 @@
 
 - `perf_opt/opt_log.md`
 - final `perf_opt/{op}.py`
-- baseline 与 final 的 `msprof op` 数据，以及触发调度结构分析时的 NPU event 数据
+- baseline 与 final 的 `msprof op` 数据
 - 所有实验分支的 `improved / config_no_gain / family_no_gain / invalid / blocked / defer` 记录
 - 本次最终 `stop_reason`
 
@@ -45,8 +45,7 @@
 
 - 性能采集是否覆盖了必测 dispatch。
 - profile 口径是否清楚，是否误采到框架小算子。
-- event 与 `msprof Task Duration` 是否明显背离，若背离是否进入诊断。
-- event 是否存在平区、session 漂移或 anchor 异常；是否先解决测量分辨力再排序。
+- `Task Duration` 复测是否稳定；候选差异落入噪声阈值时是否先解决测量分辨力再排序。
 - 当前现象分析是否足够解释候选优化点。
 - 候选优化点是否遗漏明显方向。
 - 实验分支是否都从同一个 current best 派生。

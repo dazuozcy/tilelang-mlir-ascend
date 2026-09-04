@@ -1,10 +1,10 @@
 # 性能采集流程
 
-本文档服务 `tilelang-op-optimize` 的 Stage 4 性能采集。目标是用最小流程覆盖算子中的不同 dispatch path，并为每个 path 采集一个可诊断的 `msprof op` 基准数据；当需要判断调度结构时，额外采集 NPU event median。
+本文档服务 `tilelang-op-optimize` 的 Stage 4 性能采集。目标是用最小流程覆盖算子中的不同 dispatch path，并为每个 path 采集一个可诊断的 `msprof op` 基准数据。`msprof op` 是唯一 kernel 时延测量方式；不采集 NPU event 或端到端口径。
 
 一句话规则：
 
-> 从 `{op}.py` 中找出真实存在的不同 dispatch path；每个 dispatch path 选择一个能触发该分支的代表测试数据；逐个串行运行 `msprof op`，记录每个 path 的 `Task Duration(us)` 和 raw profile 目录；若 `Block Dim` 远超 AI Core Count、单 block 工作量很小、或候选分支改变 `num_cores / T.serial / T.Pipelined / multi-buffer`，同步记录 NPU event median。
+> 从 `{op}.py` 中找出真实存在的不同 dispatch path；每个 dispatch path 选择一个能触发该分支的代表测试数据；逐个串行运行 `msprof op`，记录每个 path 的 `Task Duration(us)` 和 raw profile 目录。
 
 ---
 
@@ -97,6 +97,8 @@ perf_opt/profiles/{profile_stage}/{run_id}_{dispatch_path}/
 
 如果 `msprof op` 在输出目录下生成 `OPPROF_xxx` 子目录，记录实际 `raw_profile_dir`。
 
+注意：`msprof op` 多 launch 稳定性需要靠多次独立运行，不要用 CSV 记录条数推断实际 launch 次数。
+
 实验 stdout/stderr 不写到 `perf_opt/` 顶层，统一写入：
 
 ```text
@@ -105,30 +107,7 @@ perf_opt/logs/{profile_stage}/{run_id}.log
 
 ---
 
-## 4. 必要时采集 NPU event
-
-以下情况必须采集 NPU event median：
-
-- `Block Dim / AI Core Count` 很高，尤其达到数十倍以上。
-- 单 block 工作量很小，怀疑设备侧 block 派发或调度波次主导。
-- `msprof Task Duration` 看起来较好，但用户侧、runner 或 event 时间明显更差。
-- 实验分支改变 `num_cores / T.serial / T.Pipelined / multi-buffer` 等调度结构。
-
-使用项目已有 event runner 或 benchmark 入口，固定 workload、输入 seed 和精度容差；记录 median、重复次数、runner/command。event 口径不要和 `msprof Task Duration` 直接横比，只比较同一 workload、同一口径下的版本差异。
-
-注意：`msprof op` 多 launch 稳定性需要靠多次独立运行,不要用 CSV 记录条数推断实际 launch 次数。
-
-当 event 用于比较调度参数，且候选差异小于噪声阈值、曲线呈平区、同一配置跨 session 漂移明显，或 event 排序与 `msprof Task Duration` 冲突时，必须执行测量质量协议：
-
-- 先做 session 预热，再记录首个有效 pass。
-- 至少做 2 个独立 event pass。
-- 每个 pass 固定重测 1-2 个 `anchor_configs`，例如 current best 和一个参考候选。
-- anchor 漂移超过噪声阈值时，本 pass 标记为 `noisy_invalid`，不得用于排序。
-- 若多个候选的有效 event 差异都在噪声阈值内，标记为 `flat_response`；flat response 内部不得用单 pass event 排序，改用 `msprof Task Duration`、负载均衡和资源占用决胜。
-
----
-
-## 5. 校验采集结果
+## 4. 校验采集结果
 
 每次采集后检查：
 
@@ -136,8 +115,6 @@ perf_opt/logs/{profile_stage}/{run_id}.log
 - `captured_op_name` 能通过命令、输出目录和运行日志追溯到本次 `target_kernel_name` 或目标 TileLang kernel。
 - 采到的不是 Cast / Mul / OnesLike / Random 等框架小算子。
 - kernel launch 次数足够覆盖 `warm-up + launch-count`。
-- 如果本次要求 event，必须有同一 workload 下的 event median、重复次数和 runner/command。
-- 如果 event 用于调度参数排序，必须记录独立 pass 数、`anchor_configs`、anchor 漂移状态和 `event_quality=valid / flat_response / noisy_invalid` 判断。
 
 注意：`captured_op_name` 不一定机械等于 Python 函数名。只要能证明它属于本次目标 TileLang kernel，即可标记为 valid。
 
@@ -145,7 +122,7 @@ perf_opt/logs/{profile_stage}/{run_id}.log
 
 ---
 
-## 6. 记录格式
+## 5. 记录格式
 
 把采集结果写入 `perf_opt/opt_log.md` 的 `Performance Test Data` 章节。
 
@@ -154,20 +131,10 @@ perf_opt/logs/{profile_stage}/{run_id}.log
 ```markdown
 ## Performance Test Data
 
-| dispatch_path | workload_id | target_kernel_name | captured_op_name | task_duration_us | event_median_us | profile_status | raw_profile_dir | command |
-|---|---|---|---|---:|---:|---|---|---|
-| default | L0_main | {target_kernel} | {captured_op} | {v} | {event_or_na} | valid | {raw_dir} | {cmd} |
-| fp32_path | fp32_main | {target_kernel} | {captured_op} | {v} | {event_or_na} | valid | {raw_dir} | {cmd} |
-```
-
-触发 event 质量协议时，补充记录：
-
-```markdown
-## Event Test Data
-
-| workload_id | config_id | event_median_us | passes | anchor_configs | drift_status | event_quality | tie_break |
-|---|---|---:|---:|---|---|---|---|
-| {workload} | {config} | {v} | {n} | {anchor_configs} | valid/noisy_invalid | valid/flat_response/noisy_invalid | msprof/none |
+| dispatch_path | workload_id | target_kernel_name | captured_op_name | task_duration_us | profile_status | raw_profile_dir | command |
+|---|---|---|---|---:|---|---|---|
+| default | L0_main | {target_kernel} | {captured_op} | {v} | valid | {raw_dir} | {cmd} |
+| fp32_path | fp32_main | {target_kernel} | {captured_op} | {v} | valid | {raw_dir} | {cmd} |
 ```
 
 若某个 dispatch path 未覆盖，单独记录：

@@ -53,7 +53,7 @@ Autotune 属于 Phase 2 的一个实验分支，通常放在结构性优化之�
 执行前必须满足：
 
 - baseline kernel 已经通过正确性测试。
-- 已经通过 `msprof op` 得到目标 kernel 的 baseline Task Duration；若涉及调度结构，已采集 baseline NPU event median。
+- 已经通过 `msprof op` 得到目标 kernel 的 baseline Task Duration。
 - kernel 代码中已经暴露显式可调参数，例如 block/tile shape、K tile、pipeline stage、buffer 数量或 vector tile shape。
 - 如果结构性优化已经识别为 `T.serial` 多块迭代，应显式暴露 `block_size`、`num_cores`、`iters_per_core` 或等价参数。
 - 若搜索 `num_cores`，搜索空间必须覆盖 AI Core Count 附近、整数倍 AI Core Count、任务并发甜点区、低 imbalance 候选和 flat-grid 端点，不能只测单点。
@@ -64,13 +64,13 @@ Autotune 属于 Phase 2 的一个实验分支，通常放在结构性优化之�
 - `T.serial` 多块迭代分支至少粗搜 `block_size × num_cores`；`iters_per_core` 若由 `ceildiv(num_logical_blocks, num_cores)` 推导，不必单独暴露。
 - `T.Pipelined` / multi-buffer 分支至少粗搜 tile size、stage 或 buffer 数中实际暴露的关键参数。
 - coarse search 只服务当前结构，不混入其它结构性改动；若 coarse winner 周围存在甜点区，再扩展邻近参数精搜。
-- coarse search 结果只用于筛候选，最终 winner 必须单独用 `msprof op` 和必要的 NPU event 复测。
+- coarse search 结果只用于筛候选，最终 winner 必须单独用 `msprof op` 复测。
 
 Autotune 后邻域精搜：
 
 - 记录 autotune winner 和 top-k 配置；若 autotune API 不能直接导出 top-k，则至少保留所有已测 config 的 latency / correctness / failure reason。
 - 围绕 winner 做邻域搜索，例如 `block_size` 上下相邻合法档位、`num_cores` 上下相邻并发档位、低 imbalance 候选和资源余量更好的候选。
-- 若 autotune latency 与 `msprof Task Duration` 或 event 排序冲突，以独立复测的 `msprof op` 和必要 NPU event 决胜。
+- 若 autotune latency 与 `msprof Task Duration` 排序冲突，以独立复测的 `msprof op` 决胜。
 - 邻域精搜可以手动或脚本执行，但必须记录 search space、结果和为什么停止扩展。
 
 执行时必须记录：
@@ -82,7 +82,6 @@ Autotune 后邻域精搜：
 - 正确性结果。
 - 编译失败或 correctness 失败的配置数量。
 - 每个候选的 `Block Dim`、理论 logical block 数、UB/L0 buffer 占用估算。
-- 调度结构搜索中的 NPU event median、`event_quality`、anchor 漂移状态和 `flat_response` 判断。
 
 执行后必须：
 
@@ -90,8 +89,7 @@ Autotune 后邻域精搜：
 - 若执行了邻域精搜，用精搜 winner 生成最终候选分支，并记录它与 autotune winner 的关系。
 - 跑 L0 精度回归。
 - 对 winner 单独跑 `msprof op`。
-- 对调度结构 winner 单独采集 NPU event median。
-- 最终性能报告使用单独复测的 `msprof op` 和必要的 NPU event，不直接使用 autotune latency 作为最终结果。
+- 最终性能报告使用单独复测的 `msprof op`，不直接使用 autotune latency 作为最终结果。
 
 ## 口径约束
 
@@ -99,6 +97,6 @@ Autotune 后邻域精搜：
 
 对 elementwise / activation / 轻量 vector kernel，先判断是否存在 launch/scheduling overhead。若 `Block Dim` 远超物理核数，优先把 `T.serial` 多块迭代作为结构性改写，再 autotune `block_size` 与 `num_cores`，不要只扩大 block size 或 pipeline stage 搜索空间。`num_cores` 不只是在减少任务数，也是在给硬件提供合适的软件任务并发；太少会并发不足，太多会派发开销过高。
 
-如果所有 config 的 event latency 接近，先判断是否为 `flat_response`。若是平区，使用独立复测的 `msprof Task Duration`、imbalance 和资源余量决胜；若 event 与 msprof 都接近，再回到 Phase 2 重新分析当前现象，而不是继续扩大搜索空间。
+如果所有 config 的 `msprof Task Duration` 接近，先用更大 `launch-count` 复测。复测后仍打平时，使用 imbalance、整除性和资源余量决胜；若仍无法区分，回到 Phase 2 重新分析当前现象，而不是继续扩大搜索空间。
 
 如果 `tilelang-mlir-ascend` 中 autotune API、参数名或示例发生变化，以源库文件为准，更新本文件中的引用路径或极少量执行规则即可。

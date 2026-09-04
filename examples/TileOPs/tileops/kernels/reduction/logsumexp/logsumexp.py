@@ -25,6 +25,14 @@ Adaptation summary (GPU -> NPU):
     K8: ``autotune_configs`` / ``autotune()`` / ``_tile_n_candidates`` /
         ``_MAX_TILE_N_CANDIDATES`` / ``tune`` param -- all removed.
     K9: ``threads`` removed from ``default_config`` and ``forward`` call.
+
+  **Kernel source selection** (baseline vs perf_opt):
+    The kernel factories are imported from exactly one of two paths via
+    the comment toggle below: the Stage 3 baseline
+    (``_logsumexp_kernel_*/``) or the Stage 4 tuned versions
+    (``_logsumexp_kernel_*/perf_opt/``).  ``pytest tests/ops/`` and
+    ``pytest benchmarks/ops/`` dispatch through whichever source is
+    active.
 """
 
 import functools
@@ -43,8 +51,31 @@ from tileops.kernels.reduction._primitives import (
     ub_slab_units,
 )
 
+# ---------------------------------------------------------------------------
+# Kernel source selection: baseline vs perf_opt (Stage 4 tuned)
+#
+# Exactly one source block below is active; toggle by swapping the comment.
+# Default policy: the perf_opt source becomes active once tuned drop-in
+# kernels (same factory signatures) land at
+# ``_logsumexp_kernel_single/perf_opt/_logsumexp_kernel_single.py`` and
+# ``_logsumexp_kernel_tiled/perf_opt/_logsumexp_kernel_tiled.py`` and pass
+# their L0/L1 regression; the baseline (Stage 3) source is active
+# otherwise -- which is the current state (no validated perf_opt version
+# for logsumexp yet).  ``pytest tests/ops/test_softmax.py`` and
+# ``pytest benchmarks/ops/bench_softmax.py`` dispatch through whichever
+# source is active here.
+# ---------------------------------------------------------------------------
+# --- baseline (Stage 3) ------------------------------------------------------
 from ._logsumexp_kernel_single._logsumexp_kernel_single import _logsumexp_kernel_single
 from ._logsumexp_kernel_tiled._logsumexp_kernel_tiled import _logsumexp_kernel_tiled
+
+# --- perf_opt (Stage 4 tuned) ------------------------------------------------
+# from ._logsumexp_kernel_single.perf_opt._logsumexp_kernel_single import (
+#     _logsumexp_kernel_single,
+# )
+# from ._logsumexp_kernel_tiled.perf_opt._logsumexp_kernel_tiled import (
+#     _logsumexp_kernel_tiled,
+# )
 
 __all__ = ["LogSumExpKernel"]
 

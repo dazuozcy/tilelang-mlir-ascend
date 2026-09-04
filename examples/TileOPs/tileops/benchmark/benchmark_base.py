@@ -64,6 +64,35 @@ _logger = logging.getLogger("tileops.benchmark")
 
 _bench_results = threading.local()
 
+# Timestamp fixed at first use within a process (reset by
+# ``BenchmarkReport.clear()``) so that per-op roofline appends during a
+# run and the session-finish report dump land in the same log file.
+_profile_log_stamp: Optional[str] = None
+_profile_log_stamp_lock = threading.Lock()
+
+
+def profile_run_log_path(prof_mode: Optional[str] = None) -> str:
+    """Return the session-stable profile log path.
+
+    Format: ``profile_run_{prof_mode}_{YYYYmmdd_HHMMSS}.log`` — the
+    profiling mode (``msprof`` / ``events``) and a timestamp are embedded
+    in the filename so successive runs never overwrite each other's
+    logs.  The timestamp is resolved once per session (see
+    ``_profile_log_stamp``); the mode defaults to ``TILEOPS_PROF_MODE``
+    (``msprof``).
+
+    Args:
+        prof_mode: Profiling mode for the filename; when ``None``, the
+            ``TILEOPS_PROF_MODE`` env var (default ``msprof``) is used.
+    """
+    global _profile_log_stamp
+    with _profile_log_stamp_lock:
+        if _profile_log_stamp is None:
+            _profile_log_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp = _profile_log_stamp
+    mode = (prof_mode or os.environ.get("TILEOPS_PROF_MODE", "msprof")).lower().strip()
+    return f"profile_run_{mode}_{stamp}.log"
+
 
 def _workload_contract(op_name: str) -> tuple[str, frozenset[str]]:
     sig = load_manifest()[op_name].get("signature") or {}
@@ -177,12 +206,13 @@ def _bench_with_mode(
     is either ``"events"`` or ``"msprof"``, and *prof_output_dir* is the
     path to the msprof output directory (or ``None`` for events mode).
 
-    When ``TILEOPS_PROF_MODE=msprof`` (or *mode*="msprof"), attempts
-    msprof profiling.  If the functor is not supported by msprof (e.g.
-    closures/lambdas) or msprof is unavailable, falls back to events
-    with a warning.
+    The default mode is ``msprof`` (kernel-only latency via ``msprof op``,
+    no launch overhead).  Set ``TILEOPS_PROF_MODE=events`` (or
+    *mode*="events") to use device-event timing instead.  If the functor
+    is not supported by msprof (e.g. closures/lambdas) or msprof is
+    unavailable, falls back to events with a warning.
     """
-    mode = mode or os.environ.get("TILEOPS_PROF_MODE", "events")
+    mode = mode or os.environ.get("TILEOPS_PROF_MODE", "msprof")
     mode = mode.lower().strip()
 
     if mode == "msprof":
@@ -268,7 +298,7 @@ class BenchmarkBase(Generic[W], ABC):
             roofline_metrics = self._parse_msprof_roofline(prof_output_dir)
             if roofline_metrics is not None:
                 result.update(roofline_metrics)
-                self._dump_roofline_log(roofline_metrics)
+                self._dump_roofline_log(roofline_metrics, prof_mode)
                 print(f"=== [msprof] latency_us: {latency_us}, roofline: {roofline_metrics}")
                 return result
 
@@ -342,9 +372,9 @@ class BenchmarkBase(Generic[W], ABC):
         }
 
     @staticmethod
-    def _dump_roofline_log(roofline_metrics: dict[str, Any]) -> None:
-        """Append roofline metrics to ``profile_run.log``."""
-        log_path = "profile_run.log"
+    def _dump_roofline_log(roofline_metrics: dict[str, Any], prof_mode: str = "msprof") -> None:
+        """Append roofline metrics to the timestamped ``profile_run_*.log``."""
+        log_path = profile_run_log_path(prof_mode)
         lines = ["=== Roofline Metrics (GM Read + Write) ==="]
         for key in sorted(roofline_metrics):
             val = roofline_metrics[key]
@@ -449,7 +479,7 @@ class BenchmarkReport:
     """Collects benchmark results and dumps a markdown report."""
 
     _records: dict = {}
-    _prof_mode: str = "events"
+    _prof_mode: str = "msprof"
 
     @staticmethod
     def set_prof_mode(mode: str) -> None:
@@ -506,9 +536,12 @@ class BenchmarkReport:
         )
 
     @staticmethod
-    def dump(path: str) -> None:
+    def dump(path: Optional[str] = None) -> None:
         if not BenchmarkReport._records:
             return
+
+        if path is None:
+            path = profile_run_log_path(BenchmarkReport._prof_mode)
 
         backend = get_device_backend()
         lines = [
@@ -588,4 +621,9 @@ class BenchmarkReport:
     @staticmethod
     def clear() -> None:
         BenchmarkReport._records.clear()
-        BenchmarkReport._prof_mode = "events"
+        BenchmarkReport._prof_mode = "msprof"
+        # Reset the session timestamp so the next run gets a fresh
+        # ``profile_run_{mode}_{timestamp}.log``.
+        global _profile_log_stamp
+        with _profile_log_stamp_lock:
+            _profile_log_stamp = None

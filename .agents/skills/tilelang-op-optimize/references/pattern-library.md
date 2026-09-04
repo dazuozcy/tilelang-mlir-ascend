@@ -62,7 +62,7 @@
 | C12 | `T.copy` 静默跨 dtype 转换 | 有效（同上） |
 | — | UB dst 非零起点切片 + 32B 倍宽度触发 VEC 对齐错误 | 有效（同上；host pad 或 0 起点拷贝绕开） |
 | — | vbrc 标量→shared 不可用；serial 变量条件 if_then_else select segfault | 有效（同上） |
-| — | event 口径 ±15% session 漂移 | 方法学约束：**msprof kernel 真值决胜**，event 仅同 session 非回退检查；bench 前后检查设备空闲 |
+| — | event 口径 ±15% session 漂移 | **已弃用**（Stage 4 已移除 event 测量口径，`msprof op Task Duration` 为唯一 kernel 时延指标；历史数据仅作存档，不再指导流程） |
 
 ## 3. 检索规则（调优 Agent 每轮必读）
 
