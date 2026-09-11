@@ -318,6 +318,11 @@ PERF_FEEDBACK_MD = """# 性能反馈（[DESIGN_LIMIT]）
 - 设计层归因: DESIGN.md §1.6.3 选定向量化轴 N，实测标量执行占比 62% 表明天花板在布局设计层，非 tiling 参数可解。
 - 结构性加速估计: 3.2x（依据: C 轴融合布局实测外推，round2 对照实验）。
 
+## 参照锚定
+
+- 参照实现: 未找到参照，天花板结论置信度降级（检索范围：examples/ 同门先例 + pattern-library/cases.md 参考实现集；本例为孤立布局形态）。
+- 不可移植论证: 不适用（未找到参照，按降级口径披露）。
+
 ## 假设
 
 DESIGN.md §1.6.3 假设原生布局 + 最内连续轴 N 已最优（先例依据 pattern-library §1）。
@@ -1588,6 +1593,24 @@ def test_gate4_perf_feedback_schema_failures(tmp_path):
 
     # 缺「反馈结论」章节（重命名标题）
     write_perf_feedback(d, PERF_FEEDBACK_MD.replace("## 反馈结论", "## 结论"))
+    assert "S4-PERF-FEEDBACK-SCHEMA" in rules()
+    # 参照锚定：有参照实现但缺不可移植论证（T-1）
+    write_perf_feedback(
+        d,
+        PERF_FEEDBACK_MD.replace(
+            "- 参照实现: 未找到参照，天花板结论置信度降级（检索范围：examples/ 同门先例 + pattern-library/cases.md 参考实现集；本例为孤立布局形态）。",
+            "- 参照实现: examples/fake_ref_kernel.py（同门先例）",
+        ).replace(
+            "- 不可移植论证: 不适用（未找到参照，按降级口径披露）。",
+            "- 结构差异: 暂略。",
+        ),
+    )
+    assert "S4-PERF-FEEDBACK-ANCHOR" in rules()
+    # 参照锚定：章节整体缺失
+    write_perf_feedback(
+        d,
+        PERF_FEEDBACK_MD.replace("## 参照锚定", "## 锚定"),
+    )
     assert "S4-PERF-FEEDBACK-SCHEMA" in rules()
     # 触发判定低于 2x 阈值且无「矛盾」依据
     write_perf_feedback(

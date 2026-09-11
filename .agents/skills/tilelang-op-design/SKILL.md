@@ -85,11 +85,13 @@ references 与 templates 按**任务类型与调研深度条件加载**，禁止
 | 资源 | 加载条件 |
 |------|---------|
 | [references/migration-analysis.md](references/migration-analysis.md)（17KB） | **仅迁移任务加载**（Phase M0/M1 前）；非迁移任务禁止读取 |
-| [references/algorithm-research.md](references/algorithm-research.md)（14KB） | 轻量调研（单步逐元素 / 纯搬运类，Phase 1 判定）只读 **§1–§4**（执行位置 / 深度分级 / 调研四问 / 结论规范）；完整调研（规约 / 统计 / 窗口 / 矩阵 / 多步 / 融合类）读全文（含 §5 参考表） |
+| [references/algorithm-research.md](references/algorithm-research.md)（14KB） | 轻量调研（单步逐元素 / 纯搬运类，Phase 1 判定）只读 **§1–§4**（执行位置 / 深度分级 / 调研四问 / 结论规范）；完整调研（规约 / 统计 / 窗口 / 矩阵 / 多步 / 融合类）读全文（含 §5 参考表指针） |
+| [references/algorithm-candidates.md](references/algorithm-candidates.md) | 完整调研任务的 R1/R2 候选表本体（§5 指针的目标文件；轻量调研经 kb_search 命中时按需读取命中条目） |
 | [references/ascend-constraints.md](references/ascend-constraints.md) | Phase 3 技术约束检测时读 |
 | [references/decision-tree.md](references/decision-tree.md) | 编程模式 / API 映射决策时读 |
 | [references/info-sources.md](references/info-sources.md) | Phase 3 信息收集时读 |
 | [references/quality-checklist.md](references/quality-checklist.md) | Phase 7 自检时读 |
+| [../_shared/standards/hardware-cost-model.md](../_shared/standards/hardware-cost-model.md) | Phase R R4 定量 roofline 估算时读（常数表本体在 `tilelang-op-optimize` skill pattern-library/constants.md） |
 | [templates/design-template.md](templates/design-template.md)（25KB） | **按需取章节**：生成对应 DESIGN.md 章节时再读该节模板，禁止全文预读 |
 | [templates/report-template.md](templates/report-template.md) | Phase 8 输出报告时读 |
 
@@ -114,10 +116,10 @@ references 与 templates 按**任务类型与调研深度条件加载**，禁止
 
 1. **明确调研对象**：同一数学语义的算法族——所有能算出相同结果（数学等价或容差内等价）的算法结构。输入公式 / 源算法（迁移任务取自 M0 解读）**只是基线候选之一**，不得当作唯一算法。
 2. **调研四问（每问都必须有明确结论）**：
-   - **R1 等价化简公式**：有没有数学等价（或容差内等价）的化简公式 / 结构重排？对照 algorithm-research.md §5 参考表命中行 + 恒等变形自查 + examples/pattern-library 同类实现所用公式；候选表含基线，每候选一行等价性初判与收益方向（正式等价论证与收益量化在 §1.6.1 完成，不重复）。
+   - **R1 等价化简公式**：有没有数学等价（或容差内等价）的化简公式 / 结构重排？对照 [algorithm-candidates.md](references/algorithm-candidates.md)（R1/R2 参考表本体）命中行 + 恒等变形自查 + examples/pattern-library 同类实现所用公式；候选表含基线，每候选一行等价性初判与收益方向（正式等价论证与收益量化在 §1.6.1 完成，不重复）。
    - **R2 在线算法**：有没有单遍 / 流式（online）变体？查参考表 + 迁移任务查 §0.4（源算法已用 online 手段是直接证据）+ 结构判据（可分解为 running 统计量的算子原则上存在在线变体）；收益口径 = 扫描遍数、中间缓冲、UB 驻留可行性。结论必须是明确的「有」（纳入对比）或「无」（写结构依据）。
    - **R3 算法复杂度**：候选间四口径量化对比——FLOPs / 访存 Bytes / 数据扫描遍数 / 中间缓冲峰值（附加：可并行度、跨核归并代价）；基线候选必须在表中；口径写清含什么不含什么。带宽受限算子上访存/遍数是主导项，不得只比 FLOPs。
-   - **R4 硬件亲和性**：逐候选对照检查清单——计算单元匹配（Cube MAC 密集 / Vector 逐元素规约）、片上容量（UB 192KB / L1 512KB / L0C 128KB）、对齐整除（尾轴 32B / 分形 ≥16 / 向量宽度）、静态边界、流水可融合性（T.Pipelined / CV 融合）、跨核结构；**负向淘汰与弃选论证证据规则同口径**（附 docs/testing/examples 佐证或显式「未文档化假设 + 估算依据」，代价类论断先查 pattern-library）。
+   - **R4 硬件亲和性**：逐候选对照检查清单——计算单元匹配（Cube MAC 密集 / Vector 逐元素规约）、片上容量（UB 192KB / L1 512KB / L0C 128KB）、对齐整除（尾轴 32B / 分形 ≥16 / 向量宽度）、静态边界、流水可融合性（T.Pipelined / CV 融合）、跨核结构；**负向淘汰与弃选论证证据规则同口径**（附 docs/testing/examples 佐证或显式「未文档化假设 + 估算依据」，代价类论断先查 pattern-library）。**定量 roofline（D-2）**：容量/带宽淘汰与候选排序须引用 `tilelang-op-optimize` skill [pattern-library/constants.md](../tilelang-op-optimize/references/pattern-library/constants.md) 的实测常数条目（含版本戳），并按 [hardware-cost-model.md](../_shared/standards/hardware-cost-model.md) §2 公式计算**估算下界 = max(流量项, 发射项, 容量项)**，以「设计期估算」行落入 §1.6.0 末尾（轻量调研算子流量项必算）；常数未覆盖的量显式标注「未实测假设 + 估算依据」。
 3. **调研深度分级**：单步逐元素 / 纯搬运类（Phase 1 / M0 判定）可轻量调研（四问各一行结论 + 依据）；规约 / 统计 / 窗口 / 矩阵 / 多步 / 融合类必须完整调研（R1 候选表 + R3 对比表 + R4 逐候选评估）。
 4. **产出与下游约束**：
    - 调研结论落入 `DESIGN.md` **§1.6.0**：选定算法族 + 关键依据 + 与基线的结构差异；「无更优替代」必须写明调研范围（查过的参考表条目 / examples / pattern-library / 结构分析），禁止空白；
@@ -193,13 +195,14 @@ references 与 templates 按**任务类型与调研深度条件加载**，禁止
    - **卷积类**：直接跨步窗口（strided load）vs UB 内 im2col 重排（连续 load + 重排代价）vs implicit GEMM（Cube 路径，交 cube-skill 细化但候选矩阵须列出并给接口）；
    - **Cube / MixCV 类**：fractal/NZ 布局、load_nd2nz 即时重排 vs 显式转置、epilogue 归属侧（Cube vs Vector）——细节按 cube/mixcv skill，但 §1.6.3 须记录决策与依据；
    - **gather / scatter / 索引类**：连续批量 gather 粒度与向量轴对齐、逐元素索引 vs 分段拷贝；
-   - 已验证模式与实测代价**优先查** `tilelang-op-optimize` skill 的 [references/pattern-library.md](../tilelang-op-optimize/references/pattern-library.md) §1（含核内融合转置链、C 轴切片累加、H-collapse、tiling 启发式等已验证形态与实测数字）——**禁止凭先验（尤其 GPU 直觉，如"transpose = GM 级重排"）否决候选**；核内重排候选的 repack 代价必须落到具体 API 及其文档——T.transpose 见 `docs/Tilelang.language/创建操作/T.transpose.md`（须亲自打开核对：UB 级执行、permutation 限两轴交换且 >2 轴可分解为相邻轴交换链、dtype 矩阵 fp16 ✓/fp32 ✓/bf16 ×/整型 ×），**禁止把核内重排写成 GM 级全量重排的稻草人**（正确口径：GM 流量不变，代价在 VTransposeOp 向量管线开销与 UB 容量）；
+   - 已验证模式与实测代价**优先查** `tilelang-op-optimize` skill 的 [pattern-library/layout.md](../tilelang-op-optimize/references/pattern-library/layout.md)（含核内融合转置链、C 轴切片累加、H-collapse、tiling 启发式等已验证形态与实测数字）——**禁止凭先验（尤其 GPU 直觉，如"transpose = GM 级重排"）否决候选**；核内重排候选的 repack 代价必须落到具体 API 及其文档——T.transpose 见 `docs/Tilelang.language/创建操作/T.transpose.md`（须亲自打开核对：UB 级执行、permutation 限两轴交换且 >2 轴可分解为相邻轴交换链、dtype 矩阵 fp16 ✓/fp32 ✓/bf16 ×/整型 ×），**禁止把核内重排写成 GM 级全量重排的稻草人**（正确口径：GM 流量不变，代价在 VTransposeOp 向量管线开销与 UB 容量）；
    - **逐候选评分**：轴长对向量宽度（fp16/bf16 ×8、fp32 ×4）的整除性与尾 lane 浪费率、累加链形态（串行累加维的跨步系数是否阻碍向量化）、repack 代价、UB 容量影响（重排布局的驻留缓冲预算对照 §4.5）；
    - **弃选必须给量化理由**（禁止"未考虑"；纯 GEMV/单轴算子可写明"仅一个候选轴"豁免）；
    - **弃选论证证据规则（防未检索先否定）**：凡负向论断（"API 不支持 / 代价高 / 无先例 / 无链支撑"），必须附已亲自核对的 `docs/`、`testing/` 或 `examples/` 路径并引用具体限制条款；确无文档的必须显式标注「未文档化假设 + 估算依据」。**弃选候选所依赖的 API 必须先枚举出名字，再在 `docs/Tilelang.language/` 全部子目录检索**（含 AGENTS.md 关键词路由未覆盖的目录：`创建操作/`、`索引与元素操作/`、`条件操作/`、`排序操作/`、`逻辑操作/`、`原子操作/`）——禁止在检索前凭先验（尤其 GPU 直觉，如"transpose = GM 级重排"）否决候选；
    - 迁移任务：GPU 源码的并行轴选择（thread/warp 映射）是**输入而非结论**——GPU 轴与 NPU Vector 轴不对应，须对照 §0.3 的源码轴选择独立评估；
    - **决策落地约束**：主选轴与布局必须同步写入 §3.3 伪代码与 §6 循环结构——累加循环的内层向量维必须是本节主选轴；
-   - **实验裁决模式（判定裕度依赖未实证常数时强制）**：当主选与弃选候选的判定裕度落在任一未文档化/未实证常数（如向量管线吞吐比、跨步 UB 访问代价、转置指令效率、水平归约指令效率、gather 逐元素代价等；pattern-library §1/§2 已实测的量不算未实证——先查再判）的不确定区间内时，**不得仅凭先例或下界估算纸面单选**——必须产出三件套：① **主选方案**：默认实现（进 Stage 3），仍须是当前证据下的最优判断；② **备选方案**（≤1 个）：结构完整可实现——buffer 形状与 UB 预算、循环结构、repack/转置链在 kernel 内的位置、dtype 路径、分核三要素按新任务粒度重算，达到 Stage 4 可直接实现的深度（弃选论证 ≠ 备选设计，代价模型用于排序而非替代结构设计）；③ **实验裁决计划**：代表 shape 清单、测量指标（latency + 未知常数的实测/反解方法）、**判定阈值**（如备选 latency < 主选 × (1−ε) 才翻转）、裁决结果回写路径（实测数据触发设计修订回写 §1.6.3）。备选方案随 DESIGN.md 冻结进入 Stage 4 调优的 A/B 清单；**shape 特化工厂（lru_cache 等）的算子，实验裁决计划必须评估按 shape 分派主选/备选的可行性**（按负载分派达成总体最优，而非全局二选一）。
+   - **实验裁决模式（判定裕度依赖未实证常数时强制）**：当主选与弃选候选的判定裕度落在任一未文档化/未实证常数（如向量管线吞吐比、跨步 UB 访问代价、转置指令效率、水平归约指令效率、gather 逐元素代价等；pattern-library constants.md 已实测的量不算未实证——先查再判）的不确定区间内时，**不得仅凭先例或下界估算纸面单选**——必须产出三件套：① **主选方案**：默认实现（进 Stage 3），仍须是当前证据下的最优判断；② **备选方案**（≤1 个）：结构完整可实现——buffer 形状与 UB 预算、循环结构、repack/转置链在 kernel 内的位置、dtype 路径、分核三要素按新任务粒度重算，达到 Stage 4 可直接实现的深度（弃选论证 ≠ 备选设计，代价模型用于排序而非替代结构设计）；③ **实验裁决计划**：代表 shape 清单、测量指标（latency + 未知常数的实测/反解方法）、**判定阈值**（如备选 latency < 主选 × (1−ε) 才翻转）、裁决结果回写路径（实测数据触发设计修订回写 §1.6.3）。备选方案随 DESIGN.md 冻结进入 Stage 4 调优的 A/B 清单；**shape 特化工厂（lru_cache 等）的算子，实验裁决计划必须评估按 shape 分派主选/备选的可行性**（按负载分派达成总体最优，而非全局二选一）。
+   - **设计期探针选项（D-3，裁决计划的可选前置）**：裁决所依赖的未知常数（转置链吞吐、跨步访问代价等）可在设计期以**轻量探针**实测——严格预算：**≤2 个探针、每探针 ≤10min**，只测未知常数（最小张量/最小 kernel），不实现完整算子；探针脚本落 `examples/{project}/{op}/history_version/design_probe_*.py`（供 gate 与检视核对），探针结论（实测值 + 版本戳）写入裁决计划并同步 pattern-library/constants.md 候选（蒸馏时正式合入）；探针模板优先从 pattern-library [repro/](../tilelang-op-optimize/references/pattern-library/repro/README.md) 既有形态裁剪（ED-B 库的设计期入口），不每次从零重写。设计期探针不能替代 Stage 4 实验裁决（探针只标定常数，裁决仍按计划执行）。
 
 4. **产出与下游约束**：
    - §1.6.1 的**优化后公式**是 §3.1 公式拆解的唯一输入；
@@ -207,17 +210,25 @@ references 与 templates 按**任务类型与调研深度条件加载**，禁止
    - §1.6.3 的布局决策必须与 §3.3 伪代码、§4 内存规划（驻留缓冲形状/预算）、§6 循环结构三方一致——伪代码与循环结构中的 buffer 形状和向量维不得与选定的布局方案矛盾；
    - 实验裁决模式下，§3.3/§4/§6 只承载主选方案；备选方案的结构设计与分核参数独立成节（§1.6.4 或 §1.6.3 内小节），不与主选方案的结构章节混排。
 
+5. **等价性机器验证（D-1，Phase 2 末尾强制——"散文论证"变"可执行论证"）**：§1.6.1 含采纳优化项时（显式「无优化空间」结论除外），生成并执行 `examples/{project}/{op}/verify_equiv.py`：
+   - **内容**：每个采纳项的候选式 vs 基线式数值对照——随机张量 + 角点值（±inf/NaN/subnormal/边界 shape）上以 **fp64 参照**比对（torch CPU 实现，两式均以 fp64 计算后按目标 dtype 舍入对照）；SymPy 符号化简可选（仅限可符号化公式）；
+   - **执行**：designer 亲自运行脚本，将结果表内嵌 DESIGN.md §1.6.1（每采纳项一行：最大 ulp 差 / 违反率 / `EQUIV_PASS` 或 `EQUIV_FAIL` 结论）——`EQUIV_FAIL` 项禁止采纳（放弃或修正后重跑）；gate 1 `S1-EQUIV-EXEC` 机械校验脚本存在 + 结果表存在 + 无 FAIL 项；
+   - **对照对象**：容差内等价的采纳项，对照基准 = 原式（基线）在同 dtype 舍入路径下的输出；golden opmath 域问题（如 fp16 torch CPU 经 fp32 opmath）在角点用例中显式覆盖（lerp_tensor 实证：此类分歧设计期可机器拦截，Stage 3 才暴露损失 2485s）；
+   - 脚本随算子目录留存，Stage 2 检视（维度 8）重跑复核。
+
 ### Phase 3：信息收集
 
 **必须执行强制步骤 0：搜索本项目同类实现**。详细工具调用、信息收集步骤、禁止行为见 [references/info-sources.md](references/info-sources.md)。
 
-**必须执行强制步骤 0.5：检索实测性能模式库**——读 `tilelang-op-optimize` skill 的 [references/pattern-library.md](../tilelang-op-optimize/references/pattern-library.md) §1（已验证向量化轴/布局模式与实测代价）、§2（编译器/运行时陷阱，**注意版本戳**——tilelang 重编译后旧陷阱结论自动待重验，勿引用已标注"已失效/已推翻"的条目）与 §4（案例索引——同类算子正/反例参考，命中时优先精读对应算子目录，优先于盲目 Glob）。该库是任务实测的积累（如核内融合转置链实测代价、C 轴切片累加已验证形态、跨步系数阻碍向量化案例），其优先级高于 docs 规格与 examples 先例（见 info-sources.md 优先级表）；§1.6.3 的候选枚举与代价模型必须先对照该库，库内已有的实测数字不得当作"未实证常数"重新假设。
+**必须执行强制步骤 0.5：检索实测性能模式库**——读 `tilelang-op-optimize` skill 的 [pattern-library/INDEX.md](../tilelang-op-optimize/references/pattern-library/INDEX.md)（条目索引：已验证向量化轴/布局模式与实测代价 → layout/elementwise/attention.md；编译器/运行时陷阱 → traps-*.md，**注意版本戳**——tilelang 重编译后旧陷阱结论自动待重验，勿引用 `status: overturned` 条目；案例索引与参考实现集 → cases.md，命中时优先精读对应算子目录，优先于盲目 Glob；硬件常数 → constants.md）。**检索入口**：`python3 .agents/tools/kb_search.py "<算子族/症状/API/dtype>"`（K-3 统一检索层，覆盖 pattern-library + bottleneck-patterns + algorithm-candidates + capability-gaps + queue pending；conductor 调度 prompt 附带的预注入条目同样须消费）；**算法候选**另查本 skill [references/algorithm-candidates.md](references/algorithm-candidates.md)（R1/R2 必查清单的版本化本体，`known_impl`/`kb_links` 字段给出本仓已验证实现与实测代价指针）。该库是任务实测的积累（如核内融合转置链实测代价、C 轴切片累加已验证形态、跨步系数阻碍向量化案例），其优先级高于 docs 规格与 examples 先例（见 info-sources.md 优先级表）；§1.6.3 的候选枚举与代价模型必须先对照该库，库内已有的实测数字不得当作"未实证常数"重新假设。
 
 > 迁移任务的额外信息源：Phase M0/R/M1 的源算子解读、算法调研结论与迁移决策（优先级介于 `examples/` 同类实现与外部参考实现之间——迁移决策界定"算法该怎么设计"，`examples/` 界定"API 怎么用"）。
 
 ### Phase 4：生成 DESIGN.md
 
 基于 [templates/design-template.md](templates/design-template.md) 模板，填充所有章节：
+
+> **超长文档分段落盘**：DESIGN.md 预计超过 ~60KB / ~1200 行时，分段落盘后合并（每段先 Write 到 /tmp 再 cat 合并，或分节增量追加），不以单次整文件 Write 交付——单次巨型 Write 会因 JSON 体积截断失败（2026-09-07 attention expert 任务：1249 行 DESIGN 首写即截断，5 段拼接才成功，白耗一次 attempt 2960s）。
 
 0. 源算子解读与迁移分析（**迁移任务必填**：语义 / 算法 / 优化手段 / 硬件耦合性分析 / NPU 重设计；非迁移任务删除本章节）
 1. 概述（迁移任务：描述**迁移决策后的 NPU 侧算法**，与源算法有差异时注明；**必含 §1.6 算法调研与优化分析——1.6.0 算法调研（调研四问，产出见 Phase R）+ 1.6.1 数学等价优化 + 1.6.2 向量化替代分析 + 1.6.3 向量化轴与数据布局决策**，产出见 Phase 2；§1.4 算法描述与 §1.6.0 选定算法一致）
@@ -301,6 +312,7 @@ DESIGN.md 输出后（`first_design` 与 `revision` 每次执行均写），向�
 
 ## 子目录索引
 
-- [references/algorithm-research.md](references/algorithm-research.md) — 算法调研方法论：调研四问（等价化简公式 / 在线算法 / 复杂度 / 硬件亲和）、调研深度分级、常见算子族替代算法参考表、复杂度四口径、硬件亲和检查清单
+- [references/algorithm-research.md](references/algorithm-research.md) — 算法调研方法论：调研四问（等价化简公式 / 在线算法 / 复杂度 / 硬件亲和）、调研深度分级、复杂度四口径、硬件亲和检查清单
+- [references/algorithm-candidates.md](references/algorithm-candidates.md) — 算法候选库（版本化）：R1/R2 参考表本体，条目带 `known_impl`（本仓已验证实现）/ `kb_links`（pattern-library 实测代价指针），evolver 持续更新
 - [references/migration-analysis.md](references/migration-analysis.md) — 迁移方法论：三问解读（语义/算法/优化手段）、硬件耦合性判定（保留/等价替换/重设计/舍弃）、GPU→NPU 能力映射、NPU 算法重设计模式库
 - [templates/design-template.md](templates/design-template.md) — DESIGN.md 完整模板

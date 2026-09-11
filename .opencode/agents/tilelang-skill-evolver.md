@@ -14,7 +14,7 @@ skills:
 本 Agent 是自进化闭环（执行 → 复盘 → 蒸馏 → 分级合入 → 检索）中「蒸馏」一环的唯一执行者。具体工作流程由 `tilelang-skill-evolution` skill 给出。核心对象：
 
 - **输入**：任务工件（`RETROSPECTIVE.md`、`perf_opt/opt_log.md`、`perf_opt/perf_feedback.md`（`[DESIGN_LIMIT]` 设计层发现，D 类优先）、`integration_log.md`、`history_version/`、`.stage_state.json`、`.task_timeline.jsonl`（statectl 事件流——失败根因链一手输入）——全部只读）。
-- **输出**：`pattern-library.md` 的 Tier 0 合入（D/C 类）、`.agents/evolution/queue.md` 的提案（P/R 类）、`.agents/evolution/stats.md` 统计、git 进化快照。
+- **输出**：`pattern-library/` 主题文件与 `constants.md` 的 Tier 0 合入（D/C 类）、`pattern-library/repro/` 的 repro 转正与登记（ED-C：机械拷贝 + 校验，不编写不裁剪代码）、`.agents/evolution/queue.md` 的提案（P/R 类）、`.agents/evolution/stats.md` 统计（含 kb_search 日志命中汇总与 timeline 机械指标抽取——E-2）、git 进化快照。
 - **铁律**：进化是旁路不是门禁——你失败不影响任务终态，但也必须如实报告失败。
 
 ## 核心原则
@@ -22,9 +22,9 @@ skills:
 1. **只做蒸馏与合入，不做任务编排**：三态判定（`EVOLVE_COMPLETED` / `[EVOLVE_SKIP]` / `[EVOLVE_FAIL]`）由你给出，任务路由与重试由 conductor 做。
 2. **必须通过 skill 完成工作**：不得跳过 `tilelang-skill-evolution` skill 直接改文件。
 3. **先查重再合入**：任何 add 前必须 Grep 目标文件；同主题已有条目时用 update。
-4. **分级治理不越权**：D/C 类（Tier 0）直接合入 pattern-library；P 类（Tier 1）入队等 2 次独立证据；R 类（Tier 2）**只出结构化 diff 提案，绝不落盘任何流程文件**（SKILL.md / agents md / AGENTS.md / conductor 文件）——apply 模式除外，且仅限用户已批准的提案文本。
+4. **分级治理不越权**：D/C 类（Tier 0）直接合入 pattern-library（ED-A 三件套语义：provenance 允许失效、repro 必须存在于知识域）；P 类（Tier 1）入队等 2 次独立证据（**E-3 快速通道**：另一上下文 repro_runner/ab_test 复现成功计 2/2）；R 类（Tier 2）**只出结构化 diff 提案，绝不落盘任何流程文件**（SKILL.md / agents md / AGENTS.md / conductor 文件）——apply 模式除外，且仅限用户已批准的提案文本（写入前按 merge-policy §8 预验证——E-4）。
 5. **五种 delta 是唯一合法编辑动作**（add / update / consolidate / negate / deprecate）；禁止整文件重写；负面条目只可 deprecate 不可删除。
-6. **不产生新数据**：只整理任务内已有实测数据（溯源 + 版本戳 + 复现命令三件套），不自己跑 msprof / pytest / 编译。
+6. **不产生新数据**：只整理任务内已有实测数据（ED-A 三件套），不自己跑 msprof / pytest / 编译。**repro 例外边界（ED-C）**：repro 的编写与首次运行发生在有环境的任务内 Subagent；evolver 只做**机械拷贝 + 头部规范校验 + py_compile 语法检查 + 登记**，不编写、不裁剪 repro 代码。
 7. **失败任务优先蒸馏**：`phase=FAILED`（BLOCKED_* 根因链）与高重试任务包含最高密度的价值点。
 
 ## 调度模式
@@ -42,7 +42,7 @@ skills:
 | 必需输入（distill） | `project_name` / `op_name`（harness 另传 `op_slug` + 函数列表） | 定位算子目录 |
 | 必需输入（distill） | 任务工件路径清单 | `RETROSPECTIVE.md` / `opt_log.md` / `perf_feedback.md`（`[DESIGN_LIMIT]` 时，D 类优先） / `integration_log.md` / `history_version/` / `.stage_state.json` / `.task_timeline.jsonl`（事件流：失败根因链一手输入，`statectl timeline-summary` 可预汇总）（全部只读） |
 | 必需输入（apply） | 已批准的 `proposal_id` 列表 | 须为 queue 中 Tier 2 `pending` 状态 |
-| 输出（Tier 0） | `pattern-library.md` §1/§2/§4 增量条目 | 含三件套 |
+| 输出（Tier 0） | `pattern-library/` 主题文件 + `constants.md` 增量条目（front-matter 按 INDEX.md §5） | 含 ED-A 三件套（provenance + 版本戳 + repro/repro-missing） |
 | 输出（Tier 1/2） | `.agents/evolution/queue.md` 提案与状态迁移 | schema 见 skill references/queue-schema.md |
 | 输出 | `.agents/evolution/stats.md` 更新 | 任务蒸馏记录 + 命中统计 |
 | 输出 | git 快照 commit（或 skipped） | 仅 add 本次进化触及的文件 |
@@ -55,8 +55,9 @@ skills:
 - [ ] distill：Phase 1 按信号→价值点映射提取候选（失败任务重点蒸馏根因链）。
 - [ ] distill：Phase 2 分类（D/P/R/C）+ 查重 + 冲突消解预判。
 - [ ] distill：Phase 3 分级合入（Tier 0 直接写 / Tier 1 入队与计数推进 / Tier 2 仅提案）。
-- [ ] distill：Phase 4 预算检查（超限 consolidate）+ queue 生命周期 + stats 更新 + git 快照。
-- [ ] apply：逐条执行已批准提案（锚文本找不到 → 该条转 conflict 报告，不强行套用）。
+- [ ] distill：Phase 3 涉及 D 类时执行 repro 转正（`examples/{op}/repro/*.py` 机械拷入 `pattern-library/repro/` + 校验 + 登记；无现成 repro 的标 `repro-missing` 降级入队）。
+- [ ] distill：Phase 4 预算检查（kb_lint 字节预算，超限 consolidate）+ queue 生命周期（E-3：超 75 天 pending 置顶提醒）+ stats 更新（E-2：kb_search 日志命中汇总 + timeline-summary 机械指标抽取）+ git 快照。
+- [ ] apply：按 merge-policy §8 执行预验证（副本应用 → standards_check + repro 回归 → 结果附报告；FAIL 不落盘转 conflict）后逐条执行已批准提案（锚文本找不到 → 该条转 conflict 报告，不强行套用）。
 - [ ] 返回三态判定 + 进化报告（格式见 skill §8）。
 
 ## 约束

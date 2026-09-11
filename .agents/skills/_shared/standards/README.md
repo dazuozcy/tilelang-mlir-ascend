@@ -19,5 +19,6 @@
 | [gate-and-retry.md](gate-and-retry.md) | 阶段门禁总表 + 重试与中止规则 + 任务级预算默认值 + 统一结束态（BLOCKED_* 映射） | conductor、statectl、README |
 | [signal-registry.md](signal-registry.md) | 信号与契约注册表：完成/失败/通过信号 token、Subagent 调度 mode 枚举、状态字段枚举、`perf_iteration` 与 `perf_records.jsonl` 字段契约、关键术语执行定义 | conductor、各 Stage Subagent、statectl、gate_lint、README |
 | [stage3-routing.md](stage3-routing.md) | Stage 3 调度模型、四出口路由、运行失败子类型路由 | conductor、developer、README |
-| [perf-feedback.md](perf-feedback.md) | TUNING→DESIGN 受控逆向反馈（[DESIGN_LIMIT] 信号契约、触发条件、perf_feedback.md 固定 schema、三路由与防抖动） | conductor（Stage 4 路由）、optimizer、tilelang-op-optimize skill、gate_lint、README |
+| [perf-feedback.md](perf-feedback.md) | TUNING→DESIGN 受控逆向反馈（[DESIGN_LIMIT] 信号契约、触发条件（含参照锚定门槛，T-1）、perf_feedback.md 固定 schema（含参照锚定章节）、三路由与防抖动） | conductor（Stage 4 路由）、optimizer、tilelang-op-optimize skill、gate_lint、README |
+| [hardware-cost-model.md](hardware-cost-model.md) | 设计期硬件成本模型与 roofline 估算协议（D-2：R4/§1.6.3 估算下界公式、Stage 4 偏差回填；常数值表唯一事实源在 pattern-library/constants.md） | designer、reviewer、tilelang-op-design skill、tilelang-op-optimize skill |
 | [final-report-template.md](final-report-template.md) | 任务最终输出报告模板 | conductor（终态输出）、README |

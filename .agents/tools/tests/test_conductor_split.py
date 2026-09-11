@@ -31,8 +31,11 @@ SCENARIO_DIR = REPO_ROOT / ".opencode" / "agents" / "conductor-scenarios"
 SCENARIOS = ["new-op.md", "migration.md", "harness.md", "optimize.md"]
 
 # §6.1 item 3 + E1.1: 主文件保留场景路由 + 状态机骨架（目标 ≤300 行；
-# 门禁总表/重试上限/信号枚举引用 _shared/standards，不再内联）
-LINE_BUDGET = 300
+# 门禁总表/重试上限/信号枚举引用 _shared/standards，不再内联）。
+# 2026-09-10 conductor-improvement-report E-1/E-5/E-6: 主文件新增跨场景
+# 「知识预注入」机制（kb_search/kb_stale_check 调度前注入，非场景专属
+# 规则回流），预算放宽至 310——场景专属规则仍须下沉 conductor-scenarios/。
+LINE_BUDGET = 310
 MIN_LINES = 20
 
 # Scenario-only rule sentinels: (must exist in the scenario file, must NOT

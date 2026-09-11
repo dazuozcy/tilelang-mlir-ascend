@@ -79,7 +79,7 @@ When any task stage (design algorithm research / API mapping, develop, optimize,
 2. Record it in `.agents/evolution/capability-gaps.md`: dedupe first, then append a new entry or increment `occurrences` of the existing one, following the schema in that file.
 3. Evidence rule is identical to negative claims in Docs Auto Routing: cite concrete doc path and limiting clause, or explicitly mark as undocumented assumption with estimation basis.
 4. Escalation (compiler-level self-evolution): a gap independently identified in 2 or more different tasks becomes `recurring` and must produce a capability-fill proposal (target layer, proposed change, quantified benefit, affected operators) surfaced to the user at task end. Filing an external issue (with `[npuir]` prefix) requires user approval.
-5. Gap conclusions bind to toolchain version stamps; re-verify before reusing them after toolchain upgrades.
+5. Gap conclusions bind to toolchain version stamps; re-verify before reusing them after toolchain upgrades (mechanized: `.agents/tools/kb_stale_check.py` detects stale entries; `.agents/tools/repro_runner.py --filter stale` re-verifies repro-backed ones).
 
 ## Pre-PR Formatting Rule (Mandatory)
 

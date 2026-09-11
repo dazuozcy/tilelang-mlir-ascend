@@ -91,6 +91,16 @@ Autotune 后邻域精搜：
 - 对 winner 单独跑 `msprof op`。
 - 最终性能报告使用单独复测的 `msprof op`，不直接使用 autotune latency 作为最终结果。
 
+## 实验批处理 runner（T-4）
+
+Phase 2 的实验分支执行（L0 回归 → msprof 采集 → perf_records.jsonl 追加 → 汇总表）应交给批处理脚本而非 agent 逐个往返驱动：
+
+1. **首轮生成**：从模板 [run_experiments_template.py](run_experiments_template.py) 拷贝到 `perf_opt/run_experiments.py`，适配三个 ADAPT 点（CONFIG 常量、`build_bench_cmd`、EXPERIMENTS 清单）；
+2. **后续轮直接调用**：每轮只更新 EXPERIMENTS（分支文件 + opt_id + parent_id）并执行 `python run_experiments.py --round {N}`；脚本串行完成每分支的 L0 + msprof + 记录追加，末尾打印「候选 vs current best」汇总表（B2 结构化回流的数据源）；
+3. **决策留在 agent**：读表决策 winner/rollback/下一轮候选——脚本只执行不判断；`<5%` 差异与平区决胜仍按 SKILL.md Phase 2 第 10 步走 `ab_test.py` 交错多 run 协议；
+4. 收益：单轮 agent 交互轮次下降 60%+；大工件会话超限类失败（VP-2026-0021：两次空返回各耗 1579s/930s）被根治——长链路工具调用收敛为一次脚本执行；
+5. 脚本输出与 perf_records.jsonl 对账（append-only 纪律不变），gate 4 机械校验照常生效。
+
 ## 口径约束
 
 不要把 autotune 理解为自动完成所有性能优化。它只是在给定搜索空间中选择候选配置；winner 需要经过 top-k / 邻域检查和独立复测。

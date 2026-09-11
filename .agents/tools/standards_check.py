@@ -134,7 +134,7 @@ FINGERPRINTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     "SC-DUP-DPRC": (
         ".agents/skills/tilelang-skill-evolution/SKILL.md",
-        "| **D 实测数据** | 性能数字、代价常数、编译器/运行时陷阱实证、API 实际行为实证 | **Tier 0** 直接合入 `pattern-library.md` §1/§2（须带溯源 + 工具链版本戳 + 复现命令三件套） |",
+        "| **D 实测数据** | 性能数字、代价常数、编译器/运行时陷阱实证、API 实际行为实证 | **Tier 0** 直接合入 `pattern-library/` 主题文件 + `constants.md`（ED-A 三件套：provenance〔origin_task + 出处，允许失效〕+ 版本戳 + repro〔知识域自包含脚本〕；缺 repro → Tier 1 入队标 `repro-missing`） |",
         (
             ".agents/skills/tilelang-skill-evolution/SKILL.md",
             ".agents/skills/tilelang-skill-evolution/references/distillation-rules.md",

@@ -15,7 +15,7 @@ disable: true
   ├─ Stage 0 脚手架（仅 harness）→ Stage 1 设计 → Stage 2 检视 → Stage 3 开发 → Stage 4 调优（可选/核心）→ Stage 5 集成（仅 harness）
   │    设计修订循环（检视不通过 / [DESIGN_ERROR] / [DESIGN_LIMIT] 用户路由）← 共享 retry_count
   ├─ 状态与工件：statectl 状态机 CLI（.stage_state.json / .task_timeline.jsonl / SHA256 快照）
-  └─ 任务终态 → @tilelang-skill-evolver 蒸馏 → pattern-library / evolution queue（Tier 0/1/2 分级治理）
+  └─ 任务终态 → @tilelang-skill-evolver 蒸馏 → pattern-library/（主题文件 + constants + repro）/ evolution queue（Tier 0/1/2 分级治理）
 ```
 
 各场景状态机图、阶段总览表、标准工件目录结构只保留在权威文件中（本 README 不复制）。

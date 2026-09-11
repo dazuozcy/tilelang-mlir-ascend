@@ -29,11 +29,16 @@
 | vp_type | 定义 | 本次调优的典型来源 | 归宿 |
 |---------|------|------------------|------|
 | **D 实测数据** | 性能数字、代价常数、编译器/运行时陷阱实证、API 行为实证（含证伪更正） | 新实测代价、实验裁决实测出的未知常数、新陷阱实证 | 已按 SKILL.md Phase 4 第 6 条回写 pattern-library 的在表中记录**回写位置**（防蒸馏双写）；未回写的由终态蒸馏（`tilelang-skill-evolver`）合入 |
-| **P 模式方法** | 瓶颈模式 BP_xxx、调试手法、结构策略 | 新 BP 候选、有效/无效的结构实验结论 | 提案入队 `.agents/evolution/queue.md`，2 次独立证据后合入 |
+| **P 模式方法** | 瓶颈模式 BP_xxx、调试手法、**结构优化点**（慢→快关键更改） | 新 BP 候选、有效/无效的结构实验结论 | 提案入队 `.agents/evolution/queue.md`，2 次独立证据后合入；**结构优化点须附最小代码证据**（慢→快关键更改的最小 diff + 优化见解摘要，见「代码证据」节） |
 | **R 流程规则** | skill 流程、conductor 路由/门禁、Agent 契约修改建议 | Skill Flow Issues 中 suggested_doc_change 指向流程文件的行 | 提案入队，人工审批后合入 |
-| **C 案例索引** | 值得参考的算子目录（正/反例） | 倍率 > 2x 的结构性优化案例、终态失败档案 | pattern-library §4 案例索引 |
+| **C 案例索引** | 值得参考的算子目录（正/反例） | 倍率 > 2x 的结构性优化案例、终态失败档案 | pattern-library/cases.md 案例索引 |
 
-**证据三件套（D 类必填）**：溯源路径（本任务工件内定位）+ 复现命令（或复现条件 shape/dtype/dispatch）+ 工具链版本戳（tilelang build/commit + 设备 + CANN 版本）。缺任一时 evolver 会降级处理，但源头写全可减少往返。
+**证据三件套（ED-A 语义，D 类必填）**：**provenance**（origin_task + 出处描述，如 `opt_log.md#round-N`——允许失效，过程文件不一定随 agent 合入主干）+ 工具链版本戳（tilelang build/commit + 设备 + CANN 版本）+ **repro**（知识域自包含最小代码——见下节）。缺任一时 evolver 会降级处理，但源头写全可减少往返。
+
+**代码证据（经验与过程文件解耦——需要代码时用最少的代码表达）**：凡价值点以代码行为为依据（陷阱实证 / 代价常数 / 结构优化点），其代码证据是**知识域自包含的最小代码**，不是对 `perf_opt/{op}.py`、opt_log 或探针文件的路径引用（那些是 provenance，允许失效；甚至最终调优版本也不一定合入主干）：
+
+- 陷阱/常数类（D）：自包含 + 断言的最小复现（慢/错误形态或绕法/标定形态），落 `examples/{project}/{op}/repro/<ID>.py` 供 evolver 机械转正；
+- **结构优化点（P，正向/反向）**：**慢→快的关键代码更改**——从实验分支/探针/参考 kernel 裁出的最小 diff（完整 before/after 对照，或效应只在完整 kernel 规模显现时的 delta 骨架）**+ 优化见解摘要**（LLM 提炼的一般化洞察：为何该更改慢→快，机制归因到硬件常数/编译器行为）——目标形态见 pattern-library [repro/README.md](pattern-library/repro/README.md)（PATT-twophase-restructure.py 为范例）；无法当场最小化的在 repro 字段标 `repro-missing`。
 
 ---
 
@@ -108,9 +113,9 @@
 - `vp_type`：`D / P / R / C`（见「价值点分类」表；流程问题行指向流程文件时标 R，指向数据/模式文件时标 P/D）
 - `title`：一句话，含可检索关键词；更新已有 BP 时写 `update BP-xxx: {一句话}`
 - `evidence`（价值点表）：溯源路径（`opt_log.md#round-N` / `profiles/` 路径）；D 类若已回写 pattern-library，此处写回写位置（如 `pattern-library §1.x（已回写）`）
-- `repro`：复现命令或复现条件（shape/dtype/dispatch）；不可复现写 `none`
+- `repro`：知识域自包含最小代码路径（`repro/<ID>.py`，优化点为慢→快关键更改 + 见解摘要）或 `repro-missing`（待同族任务补）；纯流程建议写 `none`
 - `toolchain_stamp`：tilelang build/commit + 设备 + CANN 版本；无法确定如实标注
-- `target_doc`：通常为 `bottleneck-patterns.md`；D 类为 `pattern-library.md`，R 类为具体流程文件
+- `target_doc`：通常为 `bottleneck-patterns.md`；D 类为 `pattern-library/` 主题文件（含 `constants.md`），R 类为具体流程文件
 
 ---
 

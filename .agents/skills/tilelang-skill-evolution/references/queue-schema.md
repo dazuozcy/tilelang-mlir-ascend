@@ -30,19 +30,21 @@
 
 ## 2. 字段规范
 
+> **证据语义（ED-A，2026-09-10 起）**：`evidence` 是 **provenance**（来源任务与出处，**允许失效**——过程文件不随交付件上库，记录出处即可，不做存在性核验）；`repro` 是**可执行验证**（指向知识域内自包含脚本，须存在且可执行——条目的"怎么验证"）。两者的分离使提案不因工作区清理而死链。
+
 | 字段 | 必填 | 规范 |
 |------|------|------|
 | `proposal_id` | ✅ | `VP-{YYYY}-{NNNN}`，evolver 按年递增分配，不复用已决 id |
 | `type` | ✅ | `D / P / R / C`（D/C 通常不入队直接合入；入队的 D = 三件套不全的降级条目） |
 | `title` | ✅ | 一句话，含可检索关键词（算子类别 / API 名 / 现象） |
-| `evidence` | ✅ | 证据链列表，指向本仓库真实存在的工件（`路径#定位`）；Tier 1 第二次确认时**追加**新任务的证据，不覆盖 |
-| `repro` | ⭕ | 可执行的复现命令或复现条件（shape/dtype/dispatch）；不可复现的 P 类写 `none` 并在 title 标注 |
+| `evidence` | ✅ | provenance 列表：来源 task_id + 出处描述（如 `task xxx 的 opt_log round 3` / 路径 `#` 定位——路径允许失效）；Tier 1 第二次确认时**追加**新任务的证据，不覆盖 |
+| `repro` | ⭕ | 指向知识域自包含脚本路径（`pattern-library/repro/<条目ID>.py`，须存在且可执行，`repro_runner.py` 批量重验）；无法当场最小化的写 `repro-missing`（待同族任务补，ED-E）；不可复现的 P 类写 `none` 并在 title 标注。**不再接受任务工作区文件路径作为复现手段**（provenance 字段除外） |
 | `toolchain_stamp` | ✅ | `tilelang build/commit + 设备 + CANN 版本`；无法确定时写 `版本戳缺失（来源任务 {task_id}）` |
-| `target_doc` | ✅ | 目标文件仓库相对路径；R 类必须指向具体文件（禁止"待定"） |
+| `target_doc` | ✅ | 目标文件仓库相对路径；R 类必须指向具体文件（禁止"待定"）；pattern-library 相关目标指向 `pattern-library/` 主题文件（不再指向旧单文件） |
 | `delta` | ✅ | **结构化 diff 提案**：五种动作之一（add/update/consolidate/negate/deprecate）+ 完整条目正文（Tier 1）或 old/new 文本 + 定位锚文本（Tier 2，锚文本须为目标文件中真实存在的原文片段） |
 | `status` | ✅ | `pending / verified / merged / rejected / expired / conflict` |
-| `confirmations` | ✅ | `{n}/2`；仅 Tier 1 有意义（Tier 2 恒 `-/-`）；两次证据须来自**不同任务** |
-| `created_by` | ✅ | `task {task_id} {日期}`；后续确认追加 `confirmed_by: task {task_id} {日期}` |
+| `confirmations` | ✅ | `{n}/2`；仅 Tier 1 有意义（Tier 2 恒 `-/-`）；两次证据须来自**不同任务**。**强证据快速通道（E-3）**：P 类提案已有完整三件套（provenance + repro + stamp）且在**另一上下文复现成功**（`repro_runner.py` 重跑该 repro 通过 / `ab_test.py` 复现测量关系 / opbench 回放命中）→ 计为 2/2——不降低证据标准，只拓宽证据形态（人工审批权不变，仍适用 Tier 2） |
+| `created_by` | ✅ | `task {task_id} {日期}`；后续确认追加 `confirmed_by: task {task_id} {日期}`（快速通道确认标注 `confirmed_by: repro-runner {repro路径} {日期}`） |
 | `decided_by` | ⭕ | 终态必填：`evolver`（Tier 1 合入/过期）或 `human`（Tier 2 批准/否决、conflict 裁决） |
 | `decided_note` | ⭕ | rejected 必填原因；merged 记录合入锚点；conflict 记录双方证据摘要 |
 

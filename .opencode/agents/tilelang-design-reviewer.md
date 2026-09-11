@@ -82,8 +82,9 @@ conductor 在调度本 Agent 时传入 `design_md_path`（迁移任务另传 `so
 | 结论行存在 | 含字面量 `结论: 通过` 或 `结论: 不通过` | 返回 fail + `missing_conclusion` |
 | 结论一致 | 结论与检视详情一致（有阻塞级 fail 却写通过 → 失败） | 返回 fail + `conclusion_inconsistent` |
 | 检视详情完整 | 全部维度均有 pass/warn/fail 标记与说明（迁移任务 9 项含维度 0 与维度 8，非迁移任务 8 项含维度 8、维度 0 标 n/a） | 返回 fail + `missing_dimension: <维度名>` |
+| 机械复核段存在 | REVIEW.md 含「机械复核」段：`verify_equiv.py` 重跑结果（§1.6.1 含采纳项时——执行输出与内嵌表一致且全 EQUIV_PASS）+ `design_calc_check.py` JSON checks 摘要（skip 项注明人工复核结论） | 返回 fail + `mechanical_check_missing` |
 | 维度 0 有源码证据（迁移） | 维度 0 的每项结论附源码核对证据（源码语句/位置 + DESIGN.md 章节号） | 返回 fail + `dimension0_no_evidence` |
-| 维度 8 有推演证据 | 维度 8 的等价性结论附独立推演证据（优化项逐条推演结论），调研结论附独立复核证据（负向断言复核结论、复杂度复算结论、参考表/源码证据），向量化覆盖核对附 §3.3/§6 交叉核对结论 | 返回 fail + `dimension8_no_evidence` |
+| 维度 8 有推演证据 | 维度 8 的等价性结论附独立推演证据（优化项逐条推演结论），调研结论附独立复核证据（负向断言复核结论、复杂度复算结论、候选库/源码证据），向量化覆盖核对附 §3.3/§6 交叉核对结论 | 返回 fail + `dimension8_no_evidence` |
 | 不通过时有建议 | 结论不通过时，每个阻塞级问题必须有可执行修改建议 | 返回 fail + `missing_suggestion` |
 | 通过时无问题列表 | 结论通过时不得出现"检视问题列表"章节 | 返回 fail + `redundant_issue_list` |
 | 无占位符 | 不含 `{placeholder}`、`TODO`、`待补充` | 返回 fail + `placeholder_found` |
@@ -112,9 +113,9 @@ conductor 在调度本 Agent 时传入 `design_md_path`（迁移任务另传 `so
 
 - [ ] 接收 conductor 传入的 `design_md_path`（迁移任务另接收 `source_op_path`）。
 - [ ] 调用 `tilelang-design-review` skill。
-- [ ] skill 内部：Read DESIGN.md 全文 → **迁移任务：Read 源算子代码全文** → Glob 核对 examples 引用 → 逐维度检视（迁移 0–8 / 非迁移 1–8）→ 判定结论。
+- [ ] skill 内部：Read DESIGN.md 全文 → **迁移任务：Read 源算子代码全文** → Glob 核对 examples 引用 → **机械复核（skill Phase 1 第 7 步：重跑 `verify_equiv.py` + `python3 .agents/tools/design_calc_check.py --design <path>`）** → 逐维度检视（迁移 0–8 / 非迁移 1–8）→ 判定结论。
 - [ ] 迁移任务的维度 0 核对要点：§0.1/0.2 语义与 I/O ↔ 源码实际行为；§0.3 步骤覆盖 ↔ 源码计算语句（无遗漏/无臆造）；§0.4 优化识别 ↔ 源码显式优化；§0.5 处置依据 ↔ GPU→NPU 映射表与 ascend-constraints；§0.6 重设计 ↔ NPU 硬件约束 + 语义保持论证；§1–§7 ↔ §0.5/0.6 决策；§8.1 golden ↔ §0.1 语义（独立性）。
-- [ ] 所有任务的维度 8 核对要点：**§1.6.0 调研复核**（对照 `tilelang-op-design` skill references/algorithm-research.md §5 参考表命中行核对候选覆盖；负向断言"无在线变体/无化简公式/无更低复杂度算法"逐条复核（参考表 + 源码 online 证据 + 同类案例）；复杂度表独立复算（重点核对中间缓冲 GM 往返是否漏计）；选定算法与 §1.4/§3.1/§6、迁移任务 §0.5/§0.6 处置一致、源算法优化意图承接有说明）；§1.6.1 优化项四要素（原式 → 优化后 → 等价论证 → 收益）逐条独立推演等价性；§1.6.2 覆盖全部循环/标量点并与 §3.3 伪代码、§6 循环结构交叉核对；不可替代理由具体充分；替代 API 有 examples/docs 佐证（优先 v-prefix）；§3.1 以优化后公式为输入、§6 与向量化结论一致。
+- [ ] 所有任务的维度 8 核对要点：**§1.6.0 调研复核**（对照 `tilelang-op-design` skill references/algorithm-candidates.md 候选库命中行核对候选覆盖；负向断言"无在线变体/无化简公式/无更低复杂度算法"逐条复核（候选库 + 源码 online 证据 + 同类案例）；复杂度表独立复算（重点核对中间缓冲 GM 往返是否漏计）；选定算法与 §1.4/§3.1/§6、迁移任务 §0.5/§0.6 处置一致、源算法优化意图承接有说明；R4 容量/带宽淘汰引用 pattern-library/constants.md 常数条目〔D-2〕）；§1.6.1 优化项四要素（原式 → 优化后 → 等价论证 → 收益）逐条独立推演等价性 + **verify_equiv.py 重跑结果一致**；§1.6.2 覆盖全部循环/标量点并与 §3.3 伪代码、§6 循环结构交叉核对；不可替代理由具体充分；替代 API 有 examples/docs 佐证（优先 v-prefix）；§3.1 以优化后公式为输入、§6 与向量化结论一致。
 - [ ] skill 生成 `REVIEW.md` 写入算子目录。
 - [ ] 执行门禁校验（含结论字面量、维度完整性、维度 0 证据、维度 8 推演证据、建议完整性）。
 - [ ] 返回结构化摘要。

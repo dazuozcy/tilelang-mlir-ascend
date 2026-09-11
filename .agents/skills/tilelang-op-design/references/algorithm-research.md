@@ -68,27 +68,14 @@
 
 ## 5. 常见算子族替代算法参考表
 
-> 命中行是 R1/R2 的**必查清单**（下界不是上界）：命中行的候选必须评估，但调研不得止步于参考表——结构判据（§3 R2）与外部已知算法仍须过一遍。表内条目涉及 API 时仍须本地佐证（`examples/` / `docs/`）——**算法思路与 API 存在性是两回事**。
-
-| 算子族 | R1 等价化简候选 | R2 在线变体 | R3 复杂度要点 | R4 亲和要点 |
-|--------|----------------|------------|--------------|------------|
-| softmax / log-softmax / logsumexp | 减 max 稳定化（必选）；log-softmax 直接由 logsumexp 表示；exp → exp2·log2e 缩放 | online softmax（分块 running max/sum + 重缩放） | 三遍（max/sum/normalize）vs 两遍 vs 单遍 online；行缓冲 O(row) vs O(tile) | 行内水平归约 vs 垂直扫描（与 §1.6.3 交互）；整行 UB 驻留；attention 场景 MixCV 融合 |
-| layer_norm / batch_norm | `x/sqrt(var+ε)` → `x·rsqrt(...)`；单遍式 `var = E[x²]−(E[x])²`（须评估 fp32 累加与 catastrophic cancellation） | Welford 增量 mean/var；分块 running 统计 | 两遍扫描 vs 单遍；统计量缓冲 | 规约轴 lane 映射（见 §1.6.3）；fp32 累加路径 |
-| rmsnorm | 无 mean 减法（相对 layer_norm 少一遍扫描）；rsqrt | 平方和单遍天然在线 | 平方和单遍；无均值遍 | 同上 |
-| attention | scale 融入 Q/K；softmax 分母倒数乘法化 | flash 结构：online softmax + 分块 KV，O(N²) 中间矩阵 → O(N) | materialize O(N²) 访存/缓冲 vs flash O(N) 缓冲（FLOPs 同阶） | Cube GEMM 分块 + Vector online softmax 流水（MixCV）；L0C/UB 容量定 tile |
-| 卷积 | im2col + GEMM；implicit GEMM；Winograd（小核乘法次数↓加法次数↑，须按单元吞吐比评估） | 滑窗天然流式 | direct vs im2col：FLOPs 同阶、访存与单元利用率不同；Winograd 乘法按窗口比例下降 | Cube 路径分形对齐；Vector 直接窗口的 C 轴整除性；im2col 展开缓冲 |
-| 池化 | avg pool = 常数权重卷积；sum pool × 常数 = avg pool | 滑窗天然流式 | 窗口重叠数据的重复读 | C 轴向量轴；跨步系数（见 §1.6.3） |
-| 规约 / 统计（sum/max/mean/var/norm/argmax） | max + sum 合并扫描；和与平方和一次扫描 | 分块归约 + 合并（两阶段 / 树形）；Welford | 扫描遍数；跨核归并代价 | 水平 vs 垂直 lane 映射；跨核 sync 代价 |
-| top-k / 排序 | 部分选择 vs 全排序；分块 top-k + 归并 | 分块 + 归并 | O(N·k) vs O(N log N) | 归并链的核内结构与缓冲 |
-| gemv / 矩阵-向量 | GEMM 分形路径（Cube，load_nd2nz）vs Vector 规约累加 | split-K 分块累加 | Cube 利用率 vs 归约代价 | K 维分块与 L0 容量 |
-| 三角求解 / 求逆 | 只需解不需逆时：直接求解替代显式求逆（同阶但常数更小、数值更稳）；对角/三角特例降阶 | — | 求逆 + 乘法 vs 单次求解；特例 O(n²)/O(n) | Cube 三角 GEMM 支持 |
-| elementwise 链 / 激活 | 公共子表达式消除；除法乘倒数；cast 链合并 | 逐元素映射天然单遍 | 融合消除中间 GM 往返（访存收益主导） | 单遍 Vector 流；dtype 路径 |
-| 转置 / 重排 | 核内融合转置链（UB 级，实测 ~µs 级）vs host permute（~百 µs 级） | 分块转置 | GM 流量不变，代价在向量管线开销 | T.transpose dtype 矩阵（fp16/fp32 ✓，bf16/整型 ×）；UB 容量 |
+> **候选表本体已升级为独立版本化文件**（D-4）：[algorithm-candidates.md](algorithm-candidates.md)（条目带 front-matter：`known_impl` 本仓已验证实现指针 / `kb_links` pattern-library 条目 ID——候选的实测代价与反例证据；由 evolver 蒸馏 Stage 4 算法级发现时持续更新，P 类 Tier 1）。
+>
+> 命中行是 R1/R2 的**必查清单**（下界不是上界）：命中行的候选必须评估，但调研不得止步于参考表——结构判据（§3 R2）与外部已知算法仍须过一遍。表内条目涉及 API 时仍须本地佐证（`examples/` / `docs/`）——**算法思路与 API 存在性是两回事**。检索入口：`python3 .agents/tools/kb_search.py "<算子族>"`（K-3 统一检索层，覆盖候选库 + pattern-library + queue pending）。
 
 ## 6. 调研信息源（优先级沿用 [info-sources.md](info-sources.md)）
 
 1. 本参考表 §5（命中行必查）；
-2. pattern-library.md §4 案例索引（同类算子正/反例）+ §1 实测模式与代价；
+2. pattern-library/（cases.md 案例索引〔同类算子正/反例〕+ layout/attention.md 实测模式与代价 + constants.md 硬件常数）；
 3. 本仓 `examples/` 同类实现所用算法；
 4. 源算子及其依赖库（迁移任务：§0.3/§0.4 的算法与优化手段是"该算子族存在什么算法"的直接证据）；
 5. 外部已知算法（模型知识：PyTorch / CUDA 生态公开算法）：**只取算法思路**；涉及本项目 API 存在性必须本地佐证；涉及性能代价必须实测或标注「未文档化假设 + 估算依据」；

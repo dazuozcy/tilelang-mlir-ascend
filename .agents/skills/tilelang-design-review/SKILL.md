@@ -53,7 +53,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | API 与模式匹配 | Developer 模式用自动同步 API；Expert 模式才用手动 set_flag/wait_flag | Developer 模式却写手动同步 |
 | v-prefix 优先 | 新设计优先 v-prefix API（vadd/vmul/vexp/vcast/vbrc），npuir_xxx 仅作兼容说明 | — |
 
-### 维度 2：内存层级规划（阻塞级）
+### 维度 2：内存层级规划（阻塞级；可机检子集：`design_calc_check.py` ub/l1/l0c_budget 复算——VP-2026-0009 混合字节口径类错误的机械拦截位）
 
 | 检查项 | 通过标准 |
 |--------|----------|
@@ -62,7 +62,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | L0C 容量 | Cube 类算子 `block_M × block_N × sizeof(accum)` ≤ 128KB |
 | Buffer 层级标注 | 每个 buffer 标注存储层级（UB/L1/L0A/L0B/L0C） |
 
-### 维度 3：Tiling 策略（阻塞级）
+### 维度 3：Tiling 策略（阻塞级；可机检子集：`design_calc_check.py` core_split 逻辑核数算术复算）
 
 | 检查项 | 通过标准 | 不通过示例 |
 |--------|----------|-----------|
@@ -104,7 +104,7 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | 同类引用真实 | §3.5.3 引用的 examples/ 路径真实存在 |
 | 内部一致 | API 映射、内存规划、Tiling 三处描述相互一致，无矛盾 |
 
-### 维度 8：算法优化分析（阻塞级，所有任务）⭐
+### 维度 8：算法优化分析（阻塞级，所有任务；可机检子集：`verify_equiv.py` 重跑〔等价性〕+ `design_calc_check.py` r3_metrics〔四口径存在性〕——机械结果与独立推演互补）⭐
 
 > 检视方式：以 §1.6 为对象逐项核对，并交叉核对 §3.1 / §6 与 §1.6 的双向一致性。数学等价性由本维度独立推演核对，不轻信设计文档自述；**调研结论（§1.6.0）同样由本维度独立复核**——等价性推演、复杂度算术复算、负向断言对照设计 skill 的 algorithm-research.md 参考表复核。**弃选/否决类论断（API 不支持 / 代价高 / 无先例）的前提同样必须亲自查证**——打开其引用的 API 文档核对代价机制（如 repack 是核内 UB 级还是 GM 级），不得只复算数字而继承设计的前提。
 
@@ -119,22 +119,26 @@ description: "对 Stage 1 产出的算子设计文档（DESIGN.md）进行风险
 | 向量化替代完整性 | §1.6.2 覆盖方案中**全部**循环 / 标量计算点（与 §3.3 伪代码、§6 循环结构交叉核对，无遗漏）；能替代的均已替代或说明取舍 | §6 仍存在逐元素标量循环而 §1.6.2 未涵盖该点；标量累加未考虑向量归约 |
 | 不可替代理由充分性 | 不可替代项逐项给出充分且具体到本算子的理由（block 索引 / host 元数据 / tile 级顺序依赖 / 动态边界 / API 缺失佐证）；"实现简单"、"照源码写"不构成理由 | 理由栏空白或泛泛而谈；存在向量 API 可替代却未替代且无说明 |
 | 替代 API 可行性 | 替代方案 API 能在 `examples/` 或 `docs/Tilelang.language/` 找到佐证（与维度 1 核对口径一致），优先 v-prefix | 使用不存在的向量 API |
-| **向量化轴与布局决策完整性** | §1.6.3 候选矩阵**按算子类别从设计 skill 的类别候选清单枚举、类别内必选候选齐全**（逐元素/广播类：广播轴×向量轴对齐；窗口/池化类：「I/O 原生布局+最内连续轴」与「核内重排布局+高整除性轴（如 C 轴）」两类必选；规约类：水平归约 vs 垂直扫描两种 lane 映射（与"选哪条轴"正交，须分别枚举）+两遍/online 交互；卷积类：直接跨步窗口/UB im2col/implicit GEMM；Cube/MixCV：fractal-NZ/load_nd2nz 即时重排 vs 显式转置/epilogue 归属侧；gather/scatter 类：连续批量 gather 粒度与向量轴对齐）；逐候选有量化评分（整除性/尾 lane 浪费/累加链形态/repack 代价/UB 影响）；**弃选方案有量化理由，禁止"未考虑"或仅"I/O 是 NCHW 所以内部也 NCHW"式论证**（I/O layout 是契约、核内布局是设计变量）；迁移任务对照了源码隐式轴选择（GPU 轴是输入非结论）；**弃选论证前提核对：每个弃选候选的 repack/代价机制前提必须与所引 API 文档亲自核对一致（T.transpose 类重排见 `docs/Tilelang.language/创建操作/T.transpose.md`——核内 UB 级执行、二轴交换链、dtype 矩阵），并与 pattern-library（`tilelang-op-optimize` skill references/）§1/§2 已实测条目对照——负向论断（不支持/代价高/无先例）无 `docs/`、`testing/`、`examples/` 或 pattern-library 实测佐证，或与文档/实测矛盾 → 本行直接 fail** | 多轴算子无候选矩阵；类别内必选候选缺失（如规约类只评估了轴选择未评估水平/垂直 lane 映射）；只有单一候选无豁免论证；弃选理由为空或非量化（"重排有开销"无数量级）；把 I/O 契约当作内部布局依据；把核内重排写成 GM 级 transpose 等与 API 文档矛盾的代价机制；负向论断与 pattern-library 实测条目矛盾或无任何佐证 |
-| **实验裁决模式完整性**（判定裕度依赖未实证常数时） | §1.6.3 判定若依赖未文档化/未实证常数（吞吐比/跨步访问代价/转置效率/水平归约指令效率/gather 逐元素代价等，含标注「未文档化假设」的量；**pattern-library §1/§2 已实测的量不算未实证——先核对设计是否漏查了 pattern-library**），须有**主选 + 备选 + 实验裁决计划**三件套：备选方案结构完整可实现（buffer 形状/UB 预算/循环结构/转置链位置/dtype 路径/分核三要素按新任务粒度重算，达到 Stage 4 可直接实现深度——仅有弃选论证不达标）；裁决计划含代表 shape、测量指标与未知常数实测/反解方法、**明确判定阈值**、回写路径；shape 特化工厂算子须评估按 shape 分派两方案的可行性 | 纸面单选但裕度落在未知量不确定区间内（判定依赖未实测常数却无备选）；代价类论断未查 pattern-library 已有实测数据；备选只有代价论证无结构设计；无判定阈值导致 A/B 无法收敛；未评估按 shape 分派可行性 |
+| **向量化轴与布局决策完整性** | §1.6.3 候选矩阵**按算子类别从设计 skill 的类别候选清单枚举、类别内必选候选齐全**（逐元素/广播类：广播轴×向量轴对齐；窗口/池化类：「I/O 原生布局+最内连续轴」与「核内重排布局+高整除性轴（如 C 轴）」两类必选；规约类：水平归约 vs 垂直扫描两种 lane 映射（与"选哪条轴"正交，须分别枚举）+两遍/online 交互；卷积类：直接跨步窗口/UB im2col/implicit GEMM；Cube/MixCV：fractal-NZ/load_nd2nz 即时重排 vs 显式转置/epilogue 归属侧；gather/scatter 类：连续批量 gather 粒度与向量轴对齐）；逐候选有量化评分（整除性/尾 lane 浪费/累加链形态/repack 代价/UB 影响）；**弃选方案有量化理由，禁止"未考虑"或仅"I/O 是 NCHW 所以内部也 NCHW"式论证**（I/O layout 是契约、核内布局是设计变量）；迁移任务对照了源码隐式轴选择（GPU 轴是输入非结论）；**弃选论证前提核对：每个弃选候选的 repack/代价机制前提必须与所引 API 文档亲自核对一致（T.transpose 类重排见 `docs/Tilelang.language/创建操作/T.transpose.md`——核内 UB 级执行、二轴交换链、dtype 矩阵），并与 pattern-library（`tilelang-op-optimize` skill `references/pattern-library/`：layout/attention.md、traps-*.md、constants.md）已实测条目对照——负向论断（不支持/代价高/无先例）无 `docs/`、`testing/`、`examples/` 或 pattern-library 实测佐证，或与文档/实测矛盾 → 本行直接 fail** | 多轴算子无候选矩阵；类别内必选候选缺失（如规约类只评估了轴选择未评估水平/垂直 lane 映射）；只有单一候选无豁免论证；弃选理由为空或非量化（"重排有开销"无数量级）；把 I/O 契约当作内部布局依据；把核内重排写成 GM 级 transpose 等与 API 文档矛盾的代价机制；负向论断与 pattern-library 实测条目矛盾或无任何佐证 |
+| **实验裁决模式完整性**（判定裕度依赖未实证常数时） | §1.6.3 判定若依赖未文档化/未实证常数（吞吐比/跨步访问代价/转置效率/水平归约指令效率/gather 逐元素代价等，含标注「未文档化假设」的量；**pattern-library constants.md/layout.md/traps-*.md 已实测的量不算未实证——先核对设计是否漏查了 pattern-library**），须有**主选 + 备选 + 实验裁决计划**三件套：备选方案结构完整可实现（buffer 形状/UB 预算/循环结构/转置链位置/dtype 路径/分核三要素按新任务粒度重算，达到 Stage 4 可直接实现深度——仅有弃选论证不达标）；裁决计划含代表 shape、测量指标与未知常数实测/反解方法、**明确判定阈值**、回写路径；shape 特化工厂算子须评估按 shape 分派两方案的可行性 | 纸面单选但裕度落在未知量不确定区间内（判定依赖未实测常数却无备选）；代价类论断未查 pattern-library 已有实测数据；备选只有代价论证无结构设计；无判定阈值导致 A/B 无法收敛；未评估按 shape 分派可行性 |
 | 布局决策与实现一致 | §1.6.3 选定的布局/轴与 §3.3 伪代码、§4 内存规划（buffer 形状与 UB 预算）、§6 循环结构三方一致：累加循环内层向量维 = 选定轴，buffer 形状 = 选定布局；重排路径（融合转置链/host permute）在 §3.3 有对应实现 | §3.3/§6 的 buffer 布局与 1.6.3 决策矛盾；§4 UB 预算未按重排布局计算 |
 | 与下游章节一致 | §3.1 公式拆解以 §1.6.1 优化后公式为输入；§6 循环结构与 §1.6.2 结论一致（判定向量化的点不得再出现对应逐元素标量循环） | §3.1 仍用优化前公式；§6 出现 §1.6.2 未论证的标量循环 |
 
 ---
 
 ## 4. 工作流程
-
 ### Phase 1：读取与核对
+
 1. Read `DESIGN.md` 全文。
 2. **迁移任务**（`DESIGN.md` 含 §0）：Read `source_op_path` 指向的源算子代码全文；§0 与源码不一致的项在维度 0 中逐条记录证据（源码行/语句 + DESIGN.md 章节）。
 3. Glob 核对 §3.5.3 引用的 `examples/` 路径是否存在。
 4. 必要时 Grep `tilelang/language/` 确认 API 是否有导出佐证（仅静态文本核对，不执行）。
-5. **弃选论证查证（强制）**：对 §1.6.1 否决项与 §1.6.3 弃选行涉及的每个 API——设计已附 `docs/` 佐证的，亲自打开该文档核对限制条款与代价机制；未附佐证的，在 `docs/Tilelang.language/` 全部子目录（含 `创建操作/`、`索引与元素操作/`、`条件操作/`、`排序操作/`、`逻辑操作/`、`原子操作/` 等未映射目录）Glob/Grep 检索该 API。检索不到且设计声称"不存在"的，在维度 8 记录查证过程；检索得到但与设计论断矛盾的，维度 8 fail。**另须对照 pattern-library**（`tilelang-op-optimize` skill `references/pattern-library.md` §1/§2）：设计的代价类负向论断与实测条目矛盾（如"转置慢"vs 实测 µs 级、"跨步向量化无解"vs 已验证换轴模式）→ 维度 8 fail；代价类论断未引用 pattern-library 已有实测数据的，要求补证（该量已有实测则不再是"未实证假设"）。
-6. **算法调研独立复核（强制）**：Read `tilelang-op-design` skill 的 [references/algorithm-research.md](../tilelang-op-design/references/algorithm-research.md) §5 参考表，按算子族命中行核对 §1.6.0——① 候选覆盖（命中行候选是否全部评估、基线是否在表）；② 负向断言（"无在线变体/无化简公式/无更低复杂度算法"）逐条复核（对照参考表、源码证据、同类案例）；③ 复杂度表独立复算（重点：中间缓冲的 GM 往返是否漏计、口径是否自洽）；④ 亲和性淘汰依据核对（与弃选论证查证同口径）；⑤ 互联网来源核对（若 §1.6.0 引用了互联网候选）：来源记录（URL/论文/仓库 + 访问日期）齐全，「有候选无来源记录」按证据缺失处理（同弃选论证查证口径）；不要求重新访问验证内容真实性。复核发现矛盾或漏候选 → 维度 8 fail 并附证据（参考表条目 / 源码语句 / 案例路径）。
+5. **弃选论证查证（强制）**：对 §1.6.1 否决项与 §1.6.3 弃选行涉及的每个 API——设计已附 `docs/` 佐证的，亲自打开该文档核对限制条款与代价机制；未附佐证的，在 `docs/Tilelang.language/` 全部子目录（含 `创建操作/`、`索引与元素操作/`、`条件操作/`、`排序操作/`、`逻辑操作/`、`原子操作/` 等未映射目录）Glob/Grep 检索该 API。检索不到且设计声称"不存在"的，在维度 8 记录查证过程；检索得到但与设计论断矛盾的，维度 8 fail。**另须对照 pattern-library**（`tilelang-op-optimize` skill `references/pattern-library/`：layout/elementwise/attention.md 模式与实测代价、traps-*.md 陷阱、constants.md 硬件常数）：设计的代价类负向论断与实测条目矛盾（如"转置慢"vs 实测 µs 级、"跨步向量化无解"vs 已验证换轴模式）→ 维度 8 fail；代价类论断未引用 pattern-library 已有实测数据的，要求补证（该量已有实测则不再是"未实证假设"）。
+6. **算法调研独立复核（强制）**：Read `tilelang-op-design` skill 的 [references/algorithm-candidates.md](../tilelang-op-design/references/algorithm-candidates.md)（R1/R2 候选表本体，条目含 `known_impl`/`kb_links` 实测指针），按算子族命中行核对 §1.6.0——① 候选覆盖（命中行候选是否全部评估、基线是否在表）；② 负向断言（"无在线变体/无化简公式/无更低复杂度算法"）逐条复核（对照候选表、源码证据、同类案例）；③ 复杂度表独立复算（重点：中间缓冲的 GM 往返是否漏计、口径是否自洽）；④ 亲和性淘汰依据核对（与弃选论证查证同口径；容量/带宽淘汰引用 constants.md 条目）；⑤ 互联网来源核对（若 §1.6.0 引用了互联网候选）：来源记录（URL/论文/仓库 + 访问日期）齐全，「有候选无来源记录」按证据缺失处理（同弃选论证查证口径）；不要求重新访问验证内容真实性。复核发现矛盾或漏候选 → 维度 8 fail 并附证据（候选表条目 / 源码语句 / 案例路径）。
+7. **机械复核（D-1/D-5，强制——可机检部分不由 LLM 复核替代）**：
+   - **重跑等价性验证**（`DESIGN.md` §1.6.1 含采纳优化项时）：`python examples/{project}/{op}/verify_equiv.py`——执行结果须与 §1.6.1 内嵌结果表一致且全部 `EQUIV_PASS`；脚本缺失、执行失败或与内嵌表不一致 → 维度 8 fail（等价性机器验证失效）；
+   - **算术复算**：`python3 .agents/tools/design_calc_check.py --design <path>`——逐项消费其 JSON 输出：`ub/l1/l0c_budget` fail → 维度 2 fail（VP-2026-0009 混合字节口径类错误由此拦截）；`core_split` fail → 维度 3 fail；`r3_metrics` fail → 维度 8 fail；`skip` 项（无法机械解析）转为人工复核并在维度内注明"机械跳过，人工已核"；
+   - 两项机械结果摘要（含 skip 项）附入 REVIEW.md「机械复核」段——与维度 8 的"独立推演"互补而非替代。
 
 ### Phase 2：逐维度检视
 按 §3 的维度逐项检查（迁移任务 0–8，非迁移任务 1–8），每项标记 `pass / warn / fail` 并记录证据（DESIGN.md 章节号 + 源码证据 + 引用文件）。
@@ -179,6 +183,11 @@ REVIEW.md 结论给出后（通过与不通过均写），向 `examples/{project
 - 检视维度: {迁移任务：9 项（源算子理解与迁移分析 / API 可行性 / 内存层级 / Tiling / 技术约束 / 循环同步 / 验证方案 / 完整性 / 算法优化分析）；非迁移任务：8 项}
 - 阻塞级问题数: {N}
 - 建议级问题数: {N}
+
+## 机械复核（D-1/D-5）
+
+- verify_equiv 重跑: {PASS/EQUIV_FAIL/脚本缺失/不适用（无采纳优化项）——执行结果与 §1.6.1 内嵌表一致性结论}
+- design_calc_check: {逐项粘贴 JSON checks 摘要（ub/l1/l0c_budget、core_split、r3_metrics 各 pass/fail/skip + 一句 detail；skip 项注明人工复核结论）}
 
 ## 检视详情
 

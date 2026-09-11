@@ -237,6 +237,7 @@ profile 有效性校验
 - 有一个或多个分支提升时，先按本轮主指标（`msprof op Task Duration(us)`）选择候选 winner；Task Duration 打平时，用 imbalance、UB/L0 余量和代码复杂度决胜。
 - 候选 winner 如果会影响多个 dispatch path，必须补测或复用有效记录确认必测 dispatch 没有超过噪声阈值的性能回退。
 - 只有通过必测 dispatch 非回退检查的候选 winner，才能更新为全局 current best。
+- 小 kernel（Task Duration <20us）或逼近带宽/搬运地板的 workload，<5% 量级的候选差异须先经**交错 A/B/A/B 多 run 协议**裁决：≥3 次独立 `msprof op` run、候选与基线交替次序、合并中位数比较——同 kernel 跨 run 存在 ±3–5% 快/慢双态（BP_run_state_bimodality），单 run median-of-15 可能把双态膨胀误判为增益或回退（lerp_tensor 实证：单轮 -5.2% 复测收缩为 -3.1%）。协议在首次出现 <5% 差异时即前置使用，而非采纳后复核。工具化执行：`python3 .agents/tools/ab_test.py --a <baseline_kernel> --b <candidate_kernel> ...`（交错多 run + 合并中位差 + 配对方向一致性判定）。
 - 如果某分支只在目标 dispatch 提升，但其它必测 dispatch 明显回退，记录为 rollback 或 defer，不更新全局 current best。
 - 如果所有分支都无提升、无效或阻塞，current best 保持不变。
 - 其它分支记录为 `config_no_gain / family_no_gain / invalid / blocked / defer`。

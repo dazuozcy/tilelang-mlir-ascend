@@ -51,7 +51,7 @@ conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为（m
 | `precision_fix` | 精度失败修复 | `last_failure_summary`（max_diff、失败用例 shape、层级）、`attempt_index` |
 
 ### `first_impl` 模式
-- Read `DESIGN.md` + `REVIEW.md`。
+- Read `DESIGN.md` + `REVIEW.md`。**大工件分段读写纪律**（会话超限空返回防再犯，2026-09-07 attention expert 任务两次空返回实证〔1579s/930s 白耗〕）：DESIGN.md 超过 ~1200 行 / 150KB 时按章节分段 Read（先目录 + §0.5/§0.6 决策 + §3 伪代码，再按需下钻），不一次性整读；`{op}.py` 生成用分段落盘（逐段写 /tmp 后 cat 合并，或先写骨架再增量追加），不用单次巨型 Write——超限空返回表现为无输出直接失败（runtime verdict），与代码错误同型、无法从 stderr 区分。
 - 调 `tilelang-op-develop` skill：生成 kernel + golden + L0 测试 → 跑 L0。
 - L0 通过后扩展 L1/L2/Boundary → 跑全量 `--level all`。
 - 返回四出口判定。
@@ -81,6 +81,7 @@ conductor 在调度本 Agent 时会传入 `mode` 参数，决定本次行为（m
 | 可选输入 | `last_failure_summary` | 重试时传入 |
 | 输出文件 | `examples/{project}/{op}/{op}.py` | — |
 | 输出文件 | `examples/{project}/{op}/RETROSPECTIVE.md` | Stage 3 复盘章节（skill Phase 6；返回 `[PRECISION_PASS]` / `[DESIGN_ERROR]` 前追加写入） |
+| 可选输出 | `examples/{project}/{op}/repro/<TRAP-or-CONST-id>.py` | **探针转正（ED-C）**：调试中发现 API 陷阱/行为实证时，最小复现从 `/tmp` 探针转正为自包含 + 断言的 repro 脚本（实际跑一遍确认断言成立），RETROSPECTIVE 的 Value Point Proposals 以该路径为 `repro` 字段；evolver 终态机械拷入知识域 |
 | 使用 Skill | `tilelang-op-develop` | 生成代码 + 测试 + 四出口判定 |
 
 ---

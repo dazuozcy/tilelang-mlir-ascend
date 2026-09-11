@@ -288,6 +288,44 @@ def design_lint(design_path: str, migration: bool, repo_root: str):
                 _fail("S1-SECT-CONCL", design_path, f"§{sub} 缺少「{literal}」结论行")
             )
 
+    # --- §1.6.1 equivalence machine verification (D-1, S1-EQUIV-EXEC) ---
+    # When adopted optimizations exist, the prose equivalence argument must
+    # be backed by an executable check: verify_equiv.py next to DESIGN.md and
+    # an embedded result table (EQUIV_PASS per adopted item). Designs that
+    # explicitly conclude "no optimization space" are exempt.
+    r161 = region_all(sections, headings, "1.6.1")
+    if r161.strip() and "无优化空间" not in r161:
+        op_dir = os.path.dirname(os.path.abspath(design_path))
+        equiv_script = os.path.join(op_dir, "verify_equiv.py")
+        if not os.path.isfile(equiv_script):
+            failures.append(
+                _fail(
+                    "S1-EQUIV-EXEC",
+                    design_path,
+                    "§1.6.1 含采纳优化项但缺少等价性机器验证脚本 "
+                    f"{os.path.basename(op_dir)}/verify_equiv.py"
+                    "（候选式 vs 基线式数值对照，torch CPU + fp64 参照）",
+                )
+            )
+        if "EQUIV_PASS" not in r161:
+            failures.append(
+                _fail(
+                    "S1-EQUIV-EXEC",
+                    design_path,
+                    "§1.6.1 缺少等价性验证结果表（每采纳项：最大 ulp 差 / "
+                    "违反率 / EQUIV_PASS 结论——由 verify_equiv.py 执行产出）",
+                )
+            )
+        if "EQUIV_FAIL" in r161:
+            failures.append(
+                _fail(
+                    "S1-EQUIV-EXEC",
+                    design_path,
+                    "§1.6.1 存在 EQUIV_FAIL 项——等价性未通过的优化项禁止采纳，"
+                    "须放弃该项或修正论证后重跑验证",
+                )
+            )
+
     # --- §2 programming mode ---
     sec2 = region_all(sections, headings, "2")
     if sec2.strip() and not re.search(r"[Dd]eveloper|[Ee]xpert|混合", sec2):
@@ -709,7 +747,14 @@ def kernel_lint(py_path: str, op_name: str, rule_prefix: str = "S3"):
 # ---------------------------------------------------------------------------
 
 # perf_feedback.md fixed schema ([DESIGN_LIMIT] artifact, U14 fix #20).
-PERF_FEEDBACK_SECTIONS = ("触发判定", "假设", "实测", "影响面", "反馈结论")
+PERF_FEEDBACK_SECTIONS = (
+    "触发判定",
+    "参照锚定",
+    "假设",
+    "实测",
+    "影响面",
+    "反馈结论",
+)
 # Quantified structural speedup, e.g. "2.5x" / "3 倍" / "2.8 ×".
 SPEEDUP_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:x|×|倍)")
 # perf_records.jsonl required fields (A2 — schema canonical:
@@ -774,7 +819,35 @@ def perf_feedback_lint(path: str, repo_root: str):
                 _fail(
                     "S4-PERF-FEEDBACK-SCHEMA",
                     path,
-                    f"缺少「{title}」章节（固定 schema：触发判定/假设/实测/影响面/反馈结论）",
+                    "缺少「{t}」章节（固定 schema：触发判定/参照锚定/假设/实测/"
+                    "影响面/反馈结论）".format(t=title),
+                )
+            )
+
+    # Reference anchoring (T-1): a [DESIGN_LIMIT] ceiling claim must be
+    # anchored against the best known same-family implementation, or
+    # explicitly downgrade the claim confidence when none is found.
+    anchor = _section_body(text, "参照锚定") or ""
+    if anchor.strip():
+        has_ref = "参照实现" in anchor
+        degraded = "未找到参照" in anchor
+        argued = "不可移植" in anchor
+        if not has_ref:
+            failures.append(
+                _fail(
+                    "S4-PERF-FEEDBACK-ANCHOR",
+                    path,
+                    "参照锚定缺少「参照实现」来源行（同族已知最优实现路径，"
+                    "或显式「未找到参照，天花板结论置信度降级」）",
+                )
+            )
+        elif not degraded and not argued:
+            failures.append(
+                _fail(
+                    "S4-PERF-FEEDBACK-ANCHOR",
+                    path,
+                    "参照锚定缺少「不可移植论证」（逐条结构差异 + 依据；"
+                    "未找到参照时须显式降级标注）",
                 )
             )
 

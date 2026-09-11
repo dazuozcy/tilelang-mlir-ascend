@@ -12,7 +12,7 @@
 2. **API 先枚举后检索**：弃选候选依赖的 API 先写出名字，再在 `docs/Tilelang.language/` 全部子目录检索（不能只查 AGENTS.md 关键词路由映射到的目录）；检索不到且确需断言"不存在"的，记录查证过程。
 3. **引用可核验**：所引 `docs/` / `testing/` / `examples/` 路径必须真实存在（gate_lint 机械核对）且引用具体限制条款，不得只给目录不给条款。
 4. **未文档化假设显式标注**：确无文档支撑时必须写「未文档化假设 + 估算依据」，不得伪装成已验证结论。
-5. **代价类论断先查实测**：代价/性能类负向论断先查 `tilelang-op-optimize` skill 的 [references/pattern-library.md](../../tilelang-op-optimize/references/pattern-library.md) §1/§2 已实测条目——已有实测数字的量不得当作"未实证常数"重新假设，与实测矛盾即 fail。
+5. **代价类论断先查实测**：代价/性能类负向论断先查 `tilelang-op-optimize` skill 的 [pattern-library/](../../tilelang-op-optimize/references/pattern-library/INDEX.md)（layout/attention.md 已验证模式、traps-*.md 陷阱、constants.md 硬件常数——D-2 roofline 口径）已实测条目——已有实测数字的量不得当作"未实证常数"重新假设，与实测矛盾即 fail。
 
 ## 3. Stage 2 前提核对要求（reviewer 维度 8）
 

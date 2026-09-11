@@ -62,8 +62,9 @@ blocked_algo: >-
   DESIGN.md E2/E7 直连装载形态），实现期实测证伪，被迫换 T.copy slice 形态承载
   全部 GM→L1 装载（结构不变、语义等价、性能路径相同 PIPE_MTE2）。
 evidence:
-  - 复现：/tmp/opencode/probe_l1slot.py（ws_s 与 QK^T 全不匹配，flat-read 假设
-    数值逐点复现 got[i,j] == flat_q[i]·flat_k[j]）
+  - 复现：pattern-library repro/TRAP-load-nd2nz-strided.py（知识域，slice 绕法
+    bit-exact 断言）；原 session 探针 probe_l1slot.py 为 provenance（session-local，
+    flat-read 假设数值逐点复现 got[i,j] == flat_q[i]·flat_k[j]）
   - docs/Tilelang.language/内存操作/T.load_nd2nz.md §2.4 与
     docs/Tilelang.language/内存操作/T.store_fixpipe.md §2.4 全部示例均为尾二维
     连续 tile（(b,n,s,d) 布局的 (s, block_d)）
@@ -148,7 +149,7 @@ evidence:
     T.vbrc(0, v_shared)）→ bishengir-compile 报 'hivm.hir.copy' op Unsupported
     copy from cbuf to cbuf!（npuir 162:30）+ 'hivm.hir.load' root-alloc 连锁报错；
     同一 kernel 在 seq_len=16（NK=1）下编译运行通过；
-    去掉该 vbrc 后 520 编译运行精度全通过（/tmp/opencode/probe 探针）。
+    去掉该 vbrc 后 520 编译运行精度全通过（原 session 探针 /tmp/opencode/probe，provenance session-local 允许失效）。
   - 未文档化假设：docs/Tilelang.language/广播类文档（vbrc/brc）无多缓冲交互限制条款；
     估计依据为本任务探针实测。
 workaround: >-
@@ -178,7 +179,7 @@ blocked_algo: >-
   与多条件 mask 的紧凑写法不可用——被迫回退为逐块无条件 mask 预填（源 GPU kernel
   同构路径，正确性无虞，mask 预填从约 6-25% 块升至 100% 块，性能损失记入 tradeoff）。
 evidence:
-  - 复现（本任务 Stage 3，examples/multi_head_attention/_gqa_prefill_fwd_kernel）：
+  - 复现（本任务 Stage 3；examples/multi_head_attention/_gqa_prefill_fwd_kernel 任务工作区未上库，provenance 允许失效）：
     变体探针 /tmp 之外已固化于 history_version 与 debug_log.md 的探针矩阵：
     E1 简单单比较 if（编译通过）/ E2 `&` 合取（SIGSEGV exit 139）/ E3 局部变量+单比较 if
     （通过）/ E4 T.if_then_else（SIGSEGV）/ E7 嵌套单比较 if×3（通过+精度通过）/
@@ -245,8 +246,8 @@ capability: >-
 blocked_algo: >-
   attention 族跨引擎流水（Cube 双 gemm + Vector softmax）的 S/P 传输：性能上限
   ——fa4096 (S=4096,D=128) S/P w+r = 128MB 固定流量（f16 双向），是 2.27x 硬目标
-  缺口的第二大构成项（详见 examples/TileOPs/tileops/kernels/attention/
-  multi_head_attention/multi_head_attention_kernel/perf_opt/perf_feedback.md）。
+  缺口的第二大构成项（详见 examples/TileOPs/tileops/kernels/attention/ 任务工作区
+  内 perf_opt/perf_feedback.md——未上库，provenance 允许失效；结论已自包含于本条）。
 evidence:
   - docs/Tilelang.language/内存操作/T.store_fixpipe.md §2.1（dst 仅 GM 的文档限定）
   - perf_opt/profiles/round8/recheck_fa4096（Memory CSV：cube 读写 ws 流量实测）
