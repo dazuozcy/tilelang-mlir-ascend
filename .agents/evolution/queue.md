@@ -452,6 +452,7 @@ decided_by: evolver / human / -   # 裁决者
 - title: SSD/衰减类因子的 cast 侧选择——因子乘在「值随因子缩小的操作数」一侧再 cast 噪声随真值缩小；移到对侧（K 侧因子移动）fp16 绝对噪声放大 38–135×
 - evidence:
   - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z：examples/ssd_chunk_scan/_ssd_chunk_scan_fwd_kernel/verify_equiv.py（OPT-3 否决行 + 回归 case——K 侧因子化 cast(x·exp·dt) + cb 直读 gemm 的 max 2.9e-3 > atol 1e-3，噪声放大 38–135×；cb 侧因子化 cast(cb·exp·exp) 噪声随 exp 缩小）+ DESIGN.md §1.6.1 否决表
+  - 〔2026-09-20 跨工具链强化证据（同 op 谱系重跑，不计独立确认），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z，tilelang 0.1.2+4515de8 / torch CPU〕verify_equiv.py OPT-X 回归行：fp16 下 exp(anchor−dA_s) 正大指数 → inf → cast inf → ×exp(负) = **直接 NaN**（此前记录为 38–135× 噪声放大），bf16 1e26 量级（3.4e+22/2.9e+24 实测行）；OPT-Y（对角 L-side 因子化）NaN×2 同步机器复证——否决项保留 FAIL 回归记录的设计使跨任务复证零成本（RE-1 建议）
 - repro: repro-missing（知识域最小 repro 待同族任务回填；任务内复现命令见 evidence provenance 项）
   - 〔provenance，允许失效〕任务内复现命令：python3 examples/ssd_chunk_scan/_ssd_chunk_scan_fwd_kernel/verify_equiv.py（含否决项回归 case）
 - toolchain_stamp: torch CPU（2.x，脚本自带）；设计工具链 tilelang 0.1.2+1990aa9fe4 / Ascend910B2C / 2026-09-17
@@ -547,6 +548,155 @@ decided_by: evolver / human / -   # 裁决者
 - status: pending
 - confirmations: 1/2
 - created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z 2026-09-17
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0095
+- type: D
+- title: L1→L1（cbuf→cbuf）`T.copy` 硬编译失败（Expert 最小探针实证）——L1 域内重排/组装须单 buffer GM→L1 列偏移直载（dst 侧尾块裁剪联防）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 2 复检轮：REVIEW.md（复检轮）机械复核段编译探针表 + 附录（探针 1/2 关键代码与报错全文——第三轮 REVIEW 覆盖后残留描述见该任务 RETROSPECTIVE.md Stage 2 revision 章节）；DESIGN.md v1→v2 §1.4 band 组装修订（L347–353 两跳 → 单跳）
+  - docs/Tilelang.language/内存操作/T.copy.md §2.3 搬运方向表无 L1→L1 方向（GM→UB/UB→GM/UB→UB/GM→L1/L0C→GM）；全仓 examples 零先例
+  - 〔provenance，允许失效〕探针重建最小形态：`T.Kernel(1, is_npu=True)` + `T.Scope("Cube")` + 两个 `T.alloc_L1([64,64],"float16")` + `T.copy(l1_a, l1_b)` → 预期 bishengir-compile err code 1 报 'Unsupported copy from cbuf to cbuf!'；探针 2（GM→L1 列偏移直载 + 单条 band gemm）预期编译通过
+  - 关联：capability-gaps CG-2026-0002（cbuf→cbuf 不支持，2026-09-20 occurrences 2 升级 recurring——vbrc lowering + Expert T.copy 双形态）；traps-runtime.md TRAP-L1-band-dst-tail-overrun（dst 侧 ts 裁剪联防）；traps-compiler.md TRAP-C12（dtype 面，互补）
+- repro: repro-missing（知识域最小 repro 待同族任务回填——探针原件 transient 丢失；重建最小形态与预期报错见 evidence provenance 项）
+- toolchain_stamp: tilelang 0.1.2+4515de8 / CANN 8.5.0 / Ascend910B2C / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-optimize/references/pattern-library/traps-compiler.md
+- delta: |
+    add 新条目 TRAP-L1-L1-copy-unsupported（置于 TRAP-C12 之后）：**`T.copy` L1→L1（cbuf→cbuf）方向硬编译失败**：`'hivm.hir.copy' op Unsupported copy from cbuf to cbuf!`（bishengir-compile err code 1）——docs 方向表无此方向、全仓 examples 零先例、最小 Expert 探针实证（三证合一，2026-09-20，4515de8）。**绕法**：L1 域内「重排/组装」意图落为单 buffer GM→L1 列偏移 dst 直载（`T.copy(ws[s_blk,0:bl,0:ts], l1_band[0:bl,s0:s0+ts])`，src/dst 双侧尾块裁剪 ts=T.min(bs,Q−s0)——与 TRAP-L1-band-dst-tail-overrun 联防）+ 单条 band gemm `size=[tmc,l0+tl,tnp]`（探针 2 编译通过），或经 GM 中转；设计期引入新搬运方向先过三关（方向表在列 + examples 先例 + 最小编译探针）。与 TRAP-C12 构成 T.copy 方向/dtype 双约束；缺口本体 CG-2026-0002（recurring）。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 设计期「写实占位伪代码」自创两跳结构引入未证实原语、复检探针证伪（修订写实对照纪律提案见 VP-2026-0104）；报错文本与 CG-2026-0002 首证（Developer vbrc lowering，2026-09-04）同源。
+
+## VP-2026-0096
+- type: D
+- title: 深度 2 任务流水 slot-free wait 的正确位置 = Vector 任务头（先于任何 ws[slot] 写）——尾置形态在「prologue 前导 set + 事件计数」协议下产生 off-by-one WAR 竞争
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 1 revision：REVIEW.md（首轮）问题 1 令牌推演（CONS0 set 序 {prologue, C 完成任务 0, 2, …} × 尾置 wait 序 {T=0 尾, 2 尾, …} ⟹ T=2 写 ws[0] 只受 prologue 放行、不受 C 消费任务 0 约束）；DESIGN.md v1 §7.2 行 #4 头置形态
+  - 对齐基准：`git show 4515de8:examples/TileOPs/tileops/kernels/mamba/ssd_chunk_scan/ssd_chunk_scan_kernel/perf_opt/_ssd_chunk_scan_fwd_kernel.py` L356–362（旧 verified 终版注释 "from task 2 on it waits for Cube's consumption of task (T-2)"）
+  - 4515de8 复刻头置形态首编即过 + L0–Boundary 全绿（同任务 Stage 3）
+- repro: repro-missing（令牌推演为纸面证明——set 序×wait 序×受保护对象写序位置逐对配对，无需运行即可复核；verified 形态经 git show 对照）
+- toolchain_stamp: tilelang 0.1.2+4515de8 / CANN 8.5.0 / Ascend910B2C / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-optimize/references/pattern-library/attention.md
+- delta: |
+    update 条目 PL-1.12-task-pipeline-depth2 的「消费侧前导 set」update bullet，追加：**wait 置位位置是深度 N 流水的正确性字段（非实现细节）**——slot-free wait 必须 Vector 任务头前置（先于任何 ws[slot] 写）；尾置形态在「prologue 前导 set + 事件计数」协议下产生 off-by-one WAR 竞争（写只被上上次同槽令牌放行，稳态下快引擎覆写慢引擎正在读的槽位）；前置形态下任务 W 写同槽受 C 完成任务 W−2 约束（V 领先 ≤1 任务）。后续算子复刻该结构时 wait 位置须与条目形态逐行比对（2026-09-20 重跑任务 v0 曾以尾置形态逃逸设计自检、检视期令牌推演才检出）。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 检视侧令牌推演检查项已由 VP-2026-0029 承载（本任务为其第二任务独立证据）；本条为数据侧位置规则条目化。
+
+## VP-2026-0097
+- type: D
+- title: band 域 stale 列掩码双判据必要性机器证明——stale 列 NaN 可跨下三角（i ≥ j ≥ ts），加法掩码污染下三角、单一因果 vselect 亦泄漏，`(j≤i)&(j<ts)` 组合才干净
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 1：verify_equiv.py stale-NaN 专项案（输出 add_polluted=True / causal_leak=True / full_clean=True）+ DESIGN.md §1.6.1 OPT-B2 行（band-carrying 域形态）
+- repro: repro-missing（verify_equiv.py 为任务过程文件；stale-NaN 案三形态对照可由数行 torch 脚本复现——下次同族任务顺手转正）
+- toolchain_stamp: torch CPU（设计期脚本）+ tilelang 0.1.2+4515de8 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-optimize/references/pattern-library/attention.md
+- delta: |
+    update 条目 PL-1.11-causal-mask-scalartrap 的「NaN 免疫边界」bullet：band-carrying 域的 vselect 守卫须**双判据** `(j≤i)&(j<ts)`（列 OOB 守卫与因果守卫缺一不可）——机器证明（2026-09-20 verify_equiv stale-NaN 案）：stale 列 NaN 可跨越下三角（i ≥ j ≥ ts 位），① 加法掩码 NaN+x=NaN 污染下三角；② 单一因果 vselect（j≤i）不足——stale 列与下三角交集的 NaN 被选路保留；③ 组合判据干净。与既有「band-carrying 保留 vselect 选择语义」合并为完整判据。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 与 TRAP-L1-band-dst-tail-overrun（dst 侧裁剪）互为 Vector 侧掩码对偶——合入时互链。
+
+## VP-2026-0098
+- type: D
+- title: Cube gemm 分形 K 维下限「K ≥ 32」为保守口径——K=16（size=[tmc,16,tnp]）在 4515de8 编译且数值正确（max_diff 2.75e-5，静默无 stale 带污染）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 3：Boundary B-n16 用例 PASS（history gemm N=16 作 K 维）；DESIGN.md §5.3 注意 3 / §9.1（原断言「N=32 贴分形下限」为安全最小，未覆盖 N=16）
+  - 被细化口径：.agents/skills/tilelang-op-design/references/decision-tree.md L74–75（L0A: M ≥ 16, K ≥ 32 / L0B: K ≥ 32, N ≥ 16）
+- repro: repro-missing（端到端 kernel 级——B-n16 用例；K<16 与 M/N 下界未测，结论边界开放）
+- toolchain_stamp: tilelang 0.1.2+4515de8 / CANN 8.5.0 / Ascend910B2C / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-design/references/decision-tree.md
+- delta: |
+    update 分形限制条目（L74–75 邻域）追加实测注记：K=16 在 4515de8 静默有效（编译 + 数值正确，2026-09-20 ssd 重跑任务 B-n16 实证）——「K ≥ 32」按保守口径使用（设计仍可取 32 为安全最小），但不再作为硬下限否定 K∈[16,32) 形态；K<16 未测。合入时在 queue VP-2026-0057 机制②（尾块钳位 K≥32 公式）加同口径注。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 单点边界实测，泛化边界（更小 K / M/N）开放——条目按「保守口径 + 实测下界」双标注，防过度泛化。
+
+## VP-2026-0099
+- type: P
+- title: Expert MixCV kernel 工厂闭包自包含约定——返回闭包内自分配 workspace + 输入 dtype cast，对 wrapper 暴露与 GPU 源一致的张量签名 → 集成零胶水（attempts=0 首过）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 5：examples/ssd_chunk_scan/_ssd_chunk_scan_fwd_kernel/_ssd_chunk_scan_fwd_kernel.py L461–484（`_inner`/`wrapped` 内部分配 ws_c/ws_lcb + prev_states fp32→dtype cast）；integration_log.md（attempts=0——首次 import 冒烟 + 4/4 正确性 + 11/11 benchmark 一次通过）
+- repro: 复现条件——任一 Expert kernel 工厂把 workspace 分配与输入 cast 封装进返回闭包（对外签名与 GPU 源一致）后走 integrate_kernel.py 全流程
+- toolchain_stamp: tilelang 0.1.2+ubuntu.22.4.npuir（4515de8 谱系）; Ascend910B2C; CANN 8.5.0 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-optimize/references/pattern-library/attention.md（Expert 族结构约定 bullet，合入时与预算 consolidate 协调）
+- delta: |
+    add bullet（PL-1.16 结构形态段邻位）：**工厂闭包自包含约定**：kernel 工厂返回的闭包内部完成 workspace 分配（ws_c/ws_lcb 等）与输入 dtype cast（如 prev_states fp32→dtype），对 wrapper/测试/benchmark 暴露与 GPU 源算子一致的张量签名——wrapper 零胶水改动即可切换集成（2026-09-20 ssd 重跑任务 Stage 5 attempts=0 实证：smoke + 4/4 正确性 + 11/11 bench 一次通过）；workspace 需求不构成改 wrapper 的理由（与 PL-1.16 wrapper 契约兼容条呼应）。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 与 VP-2026-0093（config 口径衔接）/ VP-2026-0074（config-契约范式）构成 Stage 5 集成约定三件——合入时互链。
+
+## VP-2026-0100
+- type: D
+- title: TileOPs report 新集成算子首跑的 N 条 "missing tileops candidate record" 告警 ≠ benchmark 失败（N=workload 数）——有效性看 run.json summary 字段，不数 warnings
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 5：examples/TileOPs/reports/tileops/20260920_144100_174551_SSDChunkScanFwdOp/run.json（summary：benchmark_passed=true, msprof_case_count=11, profiler_fallback_count=0, invalid_profile_count=0；warnings：11 条 candidate record 告警）+ report.md#Warnings；integration_log.md 备注
+  - 〔provenance，允许失效〕判定命令：TileOPs 根目录以 reporting CLI 对任一新集成 Op 跑 msprof 采数后查 run.json 的 warnings 与 summary 两段
+- repro: repro-missing（需 TileOPs + 新集成 Op 环境；判定口径自包含于 delta——run.json summary 三字段，判定命令见 evidence provenance 项）
+- toolchain_stamp: tilelang 0.1.2+ubuntu.22.4.npuir; Ascend910B2C; CANN 8.5.0 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-optimize/references/pattern-library/traps-runtime.md
+- delta: |
+    add 小条目（TRAP-BENCH-CONFIG-CALIBRATION 之后，采数判读族）：新集成算子首跑 report 的 "missing tileops candidate record" 告警（每 workload 一条）是候选基线记录缺失的提示性告警，不影响 status=passed 与 msprof 数值有效性（fallback=0 / invalid_profile=0）——判定 benchmark 有效性看 run.json summary 字段（benchmark_passed / msprof_case_count / invalid_profile_count），不数 warnings（2026-09-20 ssd 重跑任务 11 条告警 + 11/11 全 msprof 实证）。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: 消费场景在 Stage 5 integrator 侧——若审批倾向改 integrator known-fixes（Tier 2 域）而非 traps-runtime 条目，可在审批时改路由（事实本体不变）。
+
+## VP-2026-0110
+- type: P
+- title: BP-engine-criticality-drift——persistent 双引擎 kernel 的引擎临界性随对侧优化漂移，「引擎 X 非关键」结论每轮 winner 合并后重算（任务周期 vs 引擎 busy 逐 workload 核算）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z：opt_log.md#round-4 现象节（逐引擎任务周期核算：w2 任务周期 6.58µs vs Cube mte2 busy 4.45µs/任务 ⟹ w2 已 AIV-bound——旧档 PL-1.18 的「AIV vec 62% 非关键」在 prevhoist+l0c2x 两轮 Cube 优化后不再成立，vbrchoist 因此获益 −3.5%）
+  - 方法有效性的自然实验：同文件 R4（vbrchoist 获益分布 w2 −3.45% / w4 −3.30% 响应，w3 −0.27% 不响应——AIV-bound/AIV 共临界/Cube-bound 三态与逐 workload 约束判定逐一互证）
+  - 〔2026-09-21 重建会话方向翻转级证据（同 op 谱系不计确认），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z〕vbrchoist 单点在无 prevhoist 的 base 上 H=80 族回退 −4.2~−6.7%（双引擎 mte2 +22~28%）、叠加 prevhoist 后全转正 +2.2~+10.2%——不只收益幅度，效应方向本身随对侧累积序翻转（本条「临界性漂移」的更强形态，opt_log R1 机制分析 + R2 复测）；姊妹 BP 提案 VP-2026-0115（累积序检验步骤），两案合入时互链
+  - 数据侧落点：attention.md PL-1.18 update③ 获益分布注（2026-09-21 已回写）；流程侧姊妹提案 VP-2026-0112（iteration-diagnosis.md 已知迭代结论补注——方法/流程两 Tier 拆分，合入时互链）
+- repro: none（方法类：判据与核算式自包含于 delta；效应载体为 attention.md PL-1.18 + repro/PL-1.18-floor2-wins.py 骨架）
+- toolchain_stamp: tilelang 0.1.2+15ad002b3d（与 4515de8 同源）/ CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/bottleneck-patterns.md
+- delta: |
+    add 新 BP 条目 BP_engine_criticality_drift（目录行置于 BP_run_state_bimodality 之后）：
+    触发信号：Expert/persistent 双引擎（Cube+Vector）kernel 的 profile 或前轮结论含「引擎 X 非关键路径 / 非瓶颈」定性；或本轮 winner 改变了某一引擎的负载/串行结构（字节削减、链解串行、op 削减类合并）。
+    核算方法（每轮 winner 合并后执行）：逐 workload 比较「任务周期（Task Duration ÷ 每核任务数）」与「各引擎 per-task busy 时间」——引擎 busy 之和逼近或超过任务周期 ⟺ 该 workload 转为该引擎 bound；临界性是随结构状态漂移的动态量，不是一次性判定（ssd 实证：AIV「非关键」结论在两轮 Cube 优化后失效，w2 转 AIV-bound 使 Vector 侧 hoist 重新有收益）。
+    推荐动作：临界性反转的 workload 上重启「此前因非关键被否决」的对侧候选（旧否决注须核对其归因是否含形态税等可修正因素——ssd v11 vbrc hoist 失败实为 vsub dst=src2 alias 税，干净形态胜出）；Cube-bound workload 对 Vector 侧优化不响应是判定正确的佐证。
+    验证指标：候选获益分布与逐 workload 临界性判定一致（响应/不响应互证）；任务周期与引擎 busy 核算在合并后重新闭合。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0115
+- type: P
+- title: BP_mixcv_cumulative_order——MixCV 跨引擎候选单点验证的累积序调制：与先验矛盾的 workload 族分裂（方向翻转）先检验累积序假设（合入对侧已验证胜出后复测），再谈 per-shape 条件路径
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z（重建会话 Stage 4）：opt_log.md#Round-1-机制分析 + #Round-2-结论与机制（round1_vbrchoist 在无 prevhoist 的 base 上 H=80 族〔2.7B，G=1 下 cb 读放大 3.3×于 H=24〕回退 −4.2~−6.7%〔双引擎 mte2 传输时间 +22~28%，L2 局部性劣化〕；同一形态叠加 prevhoist 之上 model-scale 全转正 +2.2~+10.2%——回退消失；判定「Round 1 的 H 族分裂是单点叠加顺序的伪象，非 vbrchoist 形态本身的缺陷」；本会话曾据 H 分裂考虑 trace-time H 条件分支，累积序复测后证伪该需求——避免了无谓的核内分派复杂度）
+  - 数据侧落点：attention.md PL-1.18 update②（2026-09-21 optimizer 已回写、evolver 复核对账相符——机制归因自包含：AIV 侧候选的单点效应受 Cube 侧 base 状态调制，prevhoist 削减 Cube mte2 压力后 L2/总线交互改变）
+  - 姊妹条目：queue VP-2026-0110（BP_engine_criticality_drift——临界性随对侧优化漂移；本条是其「方向翻转级」补全：不只收益幅度，效应方向本身可随累积序翻转）+ VP-2026-0112（流程侧每轮重算规则——三案合入时互链）
+- repro: repro/PL-1.18-floor2-wins.py（知识域结构骨架——三胜出与累积序效应载体；效应数据见该任务 perf_records round1/round2〔provenance，允许失效〕）
+- toolchain_stamp: tilelang 0.1.2+96f287eeaa（与 15ad002 delta 仅 .agents 文档、tilelang 源码零改动）/ CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/bottleneck-patterns.md
+- delta: |
+    add 新 BP 条目 BP_mixcv_cumulative_order（目录行与正文置于 BP_engine_criticality_drift 之后——若 VP-2026-0110 尚未合入则置于 BP_run_state_bimodality 之后，两案互链）：
+    触发信号：MixCV / 跨引擎（Cube+Vector）kernel 的单侧（Vector 或 Cube）候选单点验证出现与先验证据矛盾的 workload 族分裂——尤其方向翻转（某 workload 族稳定回退而先验记录该形态有效，或反之）。
+    检验步骤（先于 per-shape 条件路径）：① 刻画分裂族的结构特征（H/G/读放大比等维度）；② 把候选叠加到「已合入对侧已验证胜出」的 current best 上复测（复现既有累积序）；③ 分裂消失 ⟹ 单点结论依赖 base 状态（叠加顺序伪象）；分裂仍在 ⟹ 才评估核内 trace-time 条件分支。
+    机制：单侧候选的单点效应受对侧 base 状态调制（对侧字节削减/链解串行改变 L2/总线交互与双引擎 mte2 传输速度）——「单点分支从 current best 派生」的纪律须以已合入的累积序为基。
+    实测（ssd 重建会话，96f287e）：vbrchoist 单点 H=80 回退 −4.2~−6.7%（双引擎 mte2 +22~28%）→ prevhoist 之上 +2.2~+10.2%（回退消失）；机制归因与画像 diff 见 attention.md PL-1.18 update②（互链，不复制）。
+    验证指标：族分裂消失 + 全域（model-scale）非回退；与 BP_engine_criticality_drift 的逐 workload 临界性核算结论一致（响应/不响应互证）。
+- status: pending
+- confirmations: 1/2
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 2026-09-21
 - decided_by: -
 - decided_note: -
 
@@ -749,6 +899,7 @@ decided_by: evolver / human / -   # 裁决者
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/history_version/design_v0.md → design_v1.md → DESIGN.md（v0→v1→v2 修订链）+ DESIGN.md 修订记录（v1/v2 两节「为何不会再犯」）
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/RETROSPECTIVE.md#Stage-1-rev1（路线裁决三步法 + 第四维 + grep 清零 + 三同步各 VP 行）
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/RETROSPECTIVE.md#Stage-1-rev2（三同步模板 + 计数/预算标注同步义务：「8 参」「6 输入」需带边界 pattern 防子串误命中）
+  - 〔2026-09-20 第三任务证据 + 建议并入第 4 条，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕designer 修订头「问题编号 → 调整 → 为何不会再犯」三列表（DESIGN.md v1/v2 两轮均合格）使复检可逐项对账——第三轮复检据此对六步修复逐项核实；建议审批时把「修订头三列表」并入本提案 Phase 6 修订纪律（新增第 4 条：修订版头部必须带该表，防复检对账退化）
 - repro: 复现条件——任一 Stage 2 不通过后的针对性修订（本任务 2 轮修订、牵连面 10+ 章节实证）
 - toolchain_stamp: 流程规则（无运行时依赖）；证据环境同上
 - target_doc: .agents/skills/tilelang-op-design/SKILL.md
@@ -870,6 +1021,7 @@ decided_by: evolver / human / -   # 裁决者
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/RETROSPECTIVE.md#Stage-2-r2/r3（复用白名单/重推黑名单行、diff 全量比对法、不变量对账清单、API 亲验行、原建议文本即 requirements 行）
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/history_version/design_v1.md（diff 比对基准）
   - 〔2026-09-17 第二证（不同任务），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z〕RETROSPECTIVE.md re_review 章节——section-diff 复用形态独立复现：v0↔v1 按章节字节 diff 得 10 节 SAME / 9 节 CHG，SAME 节沿用首轮结论（同时证明修订无附带损伤）、CHG 节全量复核；**「修订残留只能靠全文 grep 抓、changelog 不可信作覆盖面依据」再证实**：v1 changelog 自称清理 6 处残留，复检仍独立发现 7 处未同步（§5.3/§9.1/§9.2 旧 UB 数字与 v1 直接矛盾等）——补充机械步骤见 VP-2026-0092（grep 关键词扫描 + 验证脚本 md5 比对）
+  - 〔2026-09-20 第三任务独立复现，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕复检三段式：§0.1–§0.4 与 v0 逐字一致（diff 确认）→ 首轮源码行号级核对结论安全沿用；§0.5–§0.7 与 v1 逐字一致 → 上轮修复保留；变更半径审计（v1→v2 diff 28删/40增全落修复域，无越界改动/决策翻案）+ 决定性探针复跑（band 直载形态编译复证）——section-diff 复用 + diff 锁定深查范围第三任务实证；建议合入时把「变更半径审计 / 决定性探针复跑」两步骤并入本提案 new 文本的重审工作流
 - repro: 复现条件——Stage 2 第 N 轮（N≥2）修订版重审（本任务 R2/R3 两轮实证）
 - toolchain_stamp: 证据环境 tilelang 0.1.2 + 910B2C（2026-09-07）
 - target_doc: .agents/skills/tilelang-design-review/SKILL.md
@@ -902,6 +1054,7 @@ decided_by: evolver / human / -   # 裁决者
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/DESIGN.md#§6.3（三族 + 单槽 + 跨任务五条传递性论证）
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/REVIEW.md（维度 5 附核对记录：本轮对五条论证独立推演全部成立）
   - examples/multi_head_attention/_gqa_prefill_fwd_kernel/RETROSPECTIVE.md#Stage-2（VP 行 5：推演法可直接复用）
+  - 〔2026-09-20 第二任务独立证据，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕令牌推演法双用实证：① v0 检视据此检出尾置 slot-free wait 的 off-by-one WAR 竞争（T=2 写 ws[0] 只受 prologue 前导令牌放行——set 序 × wait 序逐对配对 + 写序位置核对，REVIEW.md 问题 1）；② v1→v2 修复正确性据此纸面复核（无需运行）。wait 任务头前置结论与 GQA/旧 ssd verified 形态一致——位置规则的数据条目化提案见 VP-2026-0096（合入时互链）
 - repro: 任一 per-slot flag + 多槽 workspace 的 Expert 设计检视
 - toolchain_stamp: 证据环境 tilelang 0.1.2 + 910B2C（2026-09-07）
 - target_doc: .agents/skills/tilelang-design-review/SKILL.md
@@ -1297,6 +1450,7 @@ decided_by: evolver / human / -   # 裁决者
   - .agents/tools/design_calc_check.py#L100-103（check_ub_budget 行过滤 `^[a-zA-Z_]|缓冲` 把 N 值数字行当 header 跳过）+ #L156-158（skip detail "no per-level buffer tables parsed"）+ #L231-233（core_split skip "insufficient parsed dims"）
   - 交叉引用：queue VP-2026-0009（UB 预算混合字节口径——本条是其机械拦截位的形态扩展）
   - 〔2026-09-17 第二证（不同任务），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z〕design_calc_check 对该 DESIGN.md **两轮（v0/v1）均 skip 3/4**（ub_budget / l0c_budget / core_split），且 v1 §4.5 已含逐行 Bytes 列与「稳态峰值合计」行、§5.2 有 bl/bs/bp/bn 代码块、§5.5 有 w1–w4 逻辑核数列表仍全部无法解析——与 ada_layer_norm（N 分行驻留表形态）构成**两类表格形态的独立第二证**；REVIEW 只能人工复算（UB 115.25KB 逐项加和、L0C 16KB、逻辑核数 8/768/2560/16384）。机械拦截位（VP-2026-0009 类）连续两任务不生效，建议审批时把本条的 §5.5 workload 分核表解析与 ssd 的 w1–w4 列表形态并入 new 文本 2 的识别范围
+  - 〔2026-09-20 第三现 + 新子缺陷，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕4 项检查 3 skip（ub_budget/l0c_budget/core_split——该任务 §4.3 多张 buffer 表 + §5.2 block 常量代码块 + §5.5 分核三要素列表均无法解析，仅 r3_metrics 生效，全靠人工复算兜底）；**新子缺陷**：l0c_budget 解析取 "block 64x128"（bn=128 被当 block_N），与真实 L0C acc [bl,bp]=[64,64] 不符（结论 pass 侥幸同向）——GEMM 类多 block 参数文档的维度取用需语义识别而非首个数值对，建议并入 new 文本 2 识别范围（优先匹配 alloc_L0C/L0C 容量句上下文中的 [bl,bp] 组合）
 - repro: 复现条件——DESIGN.md 采用「按 N 分行的驻留预算表」（§4.5）或「workload 表格式分核表」（§5.5）形态时跑 design_calc_check 两个检查项（当前均 skip）
   - 〔provenance，允许失效〕任务内复现命令：python3 .agents/tools/design_calc_check.py check --design examples/ada_layer_norm/_ada_layer_norm_kernel/DESIGN.md
 - toolchain_stamp: design_calc_check.py 现行版本；失效环境 tilelang 0.1.2+a83118285a / 2026-09-10
@@ -1593,6 +1747,7 @@ decided_by: evolver / human / -   # 裁决者
   - task multi_head_attention-_gqa_prefill_fwd_kernel-20260915T025507Z：examples/multi_head_attention/RETROSPECTIVE.md Stage 5 round-2 Skill Flow Issues 第 2 行（Stage 3 L1 门禁用逐字 config `fn(64,64,ns=2)` → bn_eff∈{64,144} 验证 manifest 域，wrapper 实际派发走 E6 替换路径 (64,64,1)→(64,256)；L0-3/L0-4 仅 dim=64 smoke 验证替换路径）
   - integration_log.md Round 2 §Design-layer finding（E6 替换路径在 dim=128 causal 域的首次编译发生在 Stage 5 bench 且直接 UB 溢出 8/10；pytest 4 参数全 causal=False 三重掩盖）
   - 〔2026-09-16 第二证（不同任务），task multi_head_attention-_gqa_prefill_fwd_kernel-20260916T033847Z r9 precision_fix〕同类失效再发生：r7e per-shape bm=80 分派 × E6 bn 钳位（S_kv≥3841 → bn_eff=288）的组合变体从未被任何门禁编译（standalone 29 例 S_kv≤2048 / manifest S≤2048 / 此前 pytest 域未覆盖该 S），首次编译发生在 TileOPs pytest full-fwd-bf16 且直接 UB 溢出 13472B（bishengir-compile exit 1）——「出厂 dispatch 的 traced 变体 ∉ 门禁验证集」的同一失效类，且两个守卫各自安全、组合超限（联合核算判据 + repro：attention.md PL-1.12 r9 update / repro/PL-1.12-bn-clamp-bm-guard.py）。Tier 2 人工门不因证据数豁免，供审批参考；与 VP-2026-0074（修复侧 config-契约范式）互补
+  - 〔2026-09-21 第三现（不同任务、kernel 内配置分支亚型），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 重建会话〕tuned bn=128 经 min(bn,N) 钳位使 N_TILES 恒为 1——kernel 自带 L0/L1 门禁（TUNED config 口径）**永不触达 N_TILES_MULTI 代码路径**，而 tileops wrapper 的 GPU 启发式默认 bn=min(64,N)（H=80 时 N_tiles=2）会走该路径；结构改动涉及配置分支时须补 bn<N 探针（本会话 `perf_opt/probe_bn64.py` 4 case：双 dtype × 尾块 × 双 pp 全过）。**建议 apply 时把 new 文本的「门禁变体集」口径扩为「默认/tuned 双配置 × 关键配置分支形态」的笛卡尔积**（含 tilelang-op-optimize SKILL.md Phase 2 分支验证清单同句）；数据侧已回写 attention.md PL-1.18 update③（BP_config_path_coverage）
 - repro: 复现条件——任一 kernel 工厂带 config 替换/分派语义的迁移任务（wrapper default_config 派发的 traced 变体未入 L1 变体集时，出厂首编后移到 Stage 5 bench 暴露）
 - toolchain_stamp: tilelang 0.1.2+28783f45 + CANN 8.5.0 + Ascend910B2C / 2026-09-15
 - target_doc: .agents/skills/tilelang-op-develop/SKILL.md
@@ -2035,6 +2190,7 @@ decided_by: evolver / human / -   # 裁决者
 - title: optimize SKILL.md T-4 实验批处理 runner 补适用边界——结构重构类分支（指令流重排/流水深度/同步协议）默认手工 diff 串行，生成脚本化仅用于参数扫描类
 - evidence:
   - task multi_head_attention-_gqa_prefill_fwd_kernel-20260916T033847Z：opt_log Skill Retrospective（第六轮）第 6 条（T-4 runner 未搭建的决策依据：分支数 8、依赖交互调试多，手工串行可控性更高；r8g 结构分支的生成脚本引入 3 次脚本 bug，叠加 2 次编译错 + 1 次精度失败 + 1 次 flaky 超时，消耗 ~40% 轮次时间）
+  - 〔2026-09-21 第二任务证据（不同任务），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z〕opt_log Skill Retrospective Skill Flow Issues 第 4 行：str.replace 型代码生成分支时同构 body（even/odd/tail）文本相同导致多点命中——round3 cband 生成脚本 + round7 xmid 两度返工共 3 次工具事故均为此类（单点实验纪律本身无缺口）；作者建议的缓解工具（run_experiments 模板提供 branch-from-base 结构化 diff 生成）作为本提案 apply 时的可选配套一并裁决
 - repro: 复现条件——以脚本生成结构重构类分支（指令流重排/多槽 buffer/flag 协议变更）且需多轮交互调试的调优轮（本任务 r8g 实证形态）
 - toolchain_stamp: 会话层工作流（无运行时依赖）；发生环境 tilelang 0.1.2+a13585dc / 2026-09-16
 - target_doc: .agents/skills/tilelang-op-optimize/SKILL.md
@@ -2058,6 +2214,8 @@ decided_by: evolver / human / -   # 裁决者
   - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z：函数级 RETROSPECTIVE.md Stage 2 Skill Flow Issues 第 3 行 + Value Point Proposals——设计把 PL-1.11（front-matter `status: verified` + L117 载 2026-09-16 a13585dc 重验维持行）记作「stale 线索」并据此把实测已根治的病态形态（int16 vcmp 标量化占壁钟 45%）选为主选，Stage 2 独立复核才发现；根因 = kb_stale_check 全局 stale_count=83（工具链 0.1.2+1990aa9fe4 与条目戳批量失配）被当作单条目判定依据
   - Stage 1 first_design 同源问题：全局 stale 使设计期 roofline 只能按"估算口径"引用关键常数（CONST-capacity / CONST-vector-launch-overhead / CONST-mte2），削弱 D-2 定量性
   - pattern-library/attention.md#L110-L131（PL-1.11 status: verified + 重验行）vs DESIGN.md §1.6.3 候选 #3「stale 线索」定性
+  - 〔2026-09-20 正确消费实例，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕重跑任务设计以条目自身 status + 重验行消费 PL-1.11（DESIGN §1.6.1 OPT-B 主选依据引「PL-1.11 verified，2026-09-16 a13585dc 重验维持」），未被全局 stale_count 误导；其流程化产物（stale 条目两分法消费指引）另立 VP-2026-0101（判后如何消费 vs 本条如何判 stale，两案互补互链）
+  - 〔2026-09-21 第三现（规模峰值），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 重建会话〕stale_count=125 几乎全库假阳性——根因为 repo HEAD（96f287e，evolution 文档 commit）被当作 tilelang 工具链戳：`git diff --stat 15ad002..96f287e` 仅 7 个 .agents/ 文件、tilelang 源码零改动；任务内以 docs-only delta 论证 + probe 锚点复现（217.58 vs 217.65，−0.03%）自行消解，未造成错误决策，但 Phase 0 被迫逐条 git diff 自证。**工具侧根因修复提案见 VP-2026-0116**（stamp diff 过滤非源码路径——本条与其构成消费侧/工具侧互补，三案〔含 0101〕建议同批审批）
 - repro: python3 .agents/tools/kb_stale_check.py（观察全局 stale_count 与单条 status 的口径差）；grep -n -A3 "^id: PL-1.11" .agents/skills/tilelang-op-optimize/references/pattern-library/attention.md（读 status 与重验行）
 - toolchain_stamp: kb_stale_check.py 现行版本；发生环境 tilelang 0.1.2+1990aa9fe4 / 2026-09-17
 - target_doc: .agents/skills/tilelang-design-review/SKILL.md
@@ -2102,6 +2260,7 @@ decided_by: evolver / human / -   # 裁决者
 - evidence:
   - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z：函数级 RETROSPECTIVE.md Stage 3 Skill Flow Issues 首行——DESIGN §2.1/§0.7 声明 Developer 模式（user_requirement 亦指定）与自身 §0.6 R1 persistent 24 核分核策略不兼容，Stage 2 检视未拦截；Developer 首实现运行时崩溃（"unaligned UUB addresses"），Expert 同结构正常（repro/TRAP-DEVMODE-PERSIST-GEMM.py 双模式对照 + CG-2026-0010）
   - 判定依据：全仓 24 处 is_npu=True 中 Developer 仅用于非 persistent 网格（flash_attn_npuir_dev.py、fp8_lighting_indexer.py），persistent 混合算子（GQA、sparse_mla_fwd_exp.py）全部 Expert
+  - 〔2026-09-20 知识生效先例，task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z〕重跑任务设计期直接按 Expert 双 Scope 展开（算子结构落在 CG-2026-0010 崩溃域即判定），未再为 Developer 形态设计 fallback——省一版无效设计（该任务 Stage 1 Transferable Lessons）；本条 pending 期间的注入生效证据（kb_search 预注入命中 CG-2026-0010/PL-1.16）
 - repro: python3 .agents/skills/tilelang-op-optimize/references/pattern-library/repro/TRAP-DEVMODE-PERSIST-GEMM.py（Expert 数值断言 + Developer 崩溃双模式对照）
 - toolchain_stamp: tilelang 0.1.2+1990aa9fe4 / CANN 8.5.0 / Ascend910B2C / 2026-09-17
 - target_doc: .agents/skills/tilelang-op-design/SKILL.md
@@ -2185,6 +2344,450 @@ decided_by: evolver / human / -   # 裁决者
 - status: pending
 - confirmations: -/-
 - created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260917T035420Z 2026-09-17
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0101
+- type: R
+- title: 知识预注入 stale 条目消费两分法——结构性结论（有 HEAD 生产代码佐证）可继承为主选、硬边界结论（编译器/容量/支配性）必列 Stage 3 重验清单
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 1 first_design Skill Flow Issues 首行 + DESIGN.md §0.6 引言 / §9.2 R-1（两分法消费全记录：PL-1.16/1.12/1.13/1.14 结构性继承 + CG-2026-0010/0011/0012、UB 容量标待重验）
+  - 有效性验证：3 轮检视均判定 stale 引用处置恰当；Stage 3 重验四项全过（pass_configs 双关闭 / UB 记账 / 旧 verified 结构首编即过 / golden）；Developer fallback 设计直接跳过（VP-2026-0091 知识生效先例）
+  - 交叉引用：queue VP-2026-0089（stale 判定口径——如何判 stale；本条为判后如何消费，互补互链）
+- repro: 复现条件——工具链升级后重跑已知先例的迁移/重做任务（本次 4515de8 vs 旧任务 1990aa9fe4：E-1 预注入条目全部标 stale）
+- toolchain_stamp: 流程规则（无运行时依赖）；证据环境 tilelang 0.1.2+4515de8 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-design/SKILL.md
+- delta: |
+    动作: update（步骤 0.5 段落末尾追加）
+    定位锚: "该库是任务实测的积累（如核内融合转置链实测代价、C 轴切片累加已验证形态、跨步系数阻碍向量化案例），其优先级高于 docs 规格与 examples 先例（见 info-sources.md 优先级表）；§1.6.3 的候选枚举与代价模型必须先对照该库，库内已有的实测数字不得当作"未实证常数"重新假设。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      上述原文 + "**stale 条目两分法消费**（工具链升级后重跑先例任务时；2026-09-20 ssd 重跑实证——3 轮检视收敛 + Stage 3 重验四项全过）：结构性结论（双 Scope/流水深度/分片/布局类，有 HEAD 生产代码或先例 kernel 佐证）可继承为主选结构；硬边界结论（编译器行为/容量上限/pass 支配性类，CG-2026-00xx 与 TRAP-*/CONST-* 条目）必须列入 Stage 3 首日重验清单——避免全盘照抄（旧结论失效风险）与全盘重验（丢先例红利）两个极端。条目是否 stale 以条目自身 front-matter status + 重验行为准（VP-2026-0089），全局 stale_count 不作单条目判定依据。"
+    动机: 重跑任务的预注入条目在工具链升级后全部标 stale——无消费指引时要么盲信旧结论、要么整体降级重推；两分法使本次重跑零无效重设计（Developer fallback 直接跳过）且硬边界全部实测重验。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0102
+- type: R
+- title: 迁移重做任务检视前置一步——先 `git status --short -- examples/` 识别 Stage 0 脚手架删除的旧工件，先例引用一律经 `git show HEAD:<path>` 核对提交版本（仅查工作树会误判「引用不存在」或漏核关键先例）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 2 first review Process 行：Stage 0 脚手架删除旧任务集成工件（`ssd_chunk_scan_kernel/` 整目录 D 状态），而设计大量引用旧集成版/perf_opt 终版作生产先例——host-cast 先例、wait 置位 verified 形态均只存于 git；REVIEW.md 元信息「工件注入披露」+ 问题 1/7 的 git 证据链
+- repro: 复现条件——任一迁移重做任务（Stage 0 脚手架重建清理旧任务集成产物）的 Stage 2 检视
+- toolchain_stamp: 检视层规则（无运行时依赖）；证据环境 tilelang 0.1.2+4515de8 / 2026-09-20
+- target_doc: .agents/skills/tilelang-design-review/SKILL.md
+- delta: |
+    动作: update（Phase 1 步骤 2 扩展）
+    定位锚: "2. **迁移任务**（`DESIGN.md` 含 §0）：Read `source_op_path` 指向的源算子代码全文；§0 与源码不一致的项在维度 0 中逐条记录证据（源码行/语句 + DESIGN.md 章节）。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      2. **迁移任务**（`DESIGN.md` 含 §0）：Read `source_op_path` 指向的源算子代码全文；§0 与源码不一致的项在维度 0 中逐条记录证据（源码行/语句 + DESIGN.md 章节）。**迁移重做任务附加**：先 `git status --short -- examples/` 识别 Stage 0 脚手架删除的旧任务工件（整目录 D 状态常见）——设计引用的旧集成版/perf_opt 终版等先例只存于 git，一律以 `git show HEAD:<path>` 核对提交版本；仅查工作树会误判「引用不存在」（维度 7 假 fail）或漏核关键先例（2026-09-20 ssd 重跑任务：host-cast 先例与 wait 置位 verified 形态均仅存于 git）。
+    动机: 重做任务的先例引用合法性无法在工作树核验——不识别删除态会把合法引用误判为断链，或让设计的关键先例逃过核对。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0103
+- type: R
+- title: design SKILL Phase 5 伪代码自检两条——① Expert 双域伪代码逐 flag 令牌推演（set 序×wait 序×写序位置配对，并与 verified 实现行级比对）② 设计自定 L0 边界用例的伪代码形状走查（非整除/P_tiles≥2/退化域逐一过 copy/gemm src/dst 形状与循环变量绑定）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 1 revision 两轮 Skill Flow Issues：v0 尾置 wait 在 §0.6 R7 论证文字正确的情况下被写出（论证与伪代码脱节——WAR 竞争逃逸 Phase 5 自检、Stage 2 令牌推演才检出，REVIEW.md 问题 1）；v0 x 装载（0:P 全宽、pp 循环外）与 Vector 域 pp 未绑定只在 P=64（当前 workload 全集）侥幸成立——P=128 是设计自定 L0-2 门禁用例却未过伪代码走查（REVIEW.md 问题 2/3）
+- repro: 复现条件——任一 Expert 双域流水设计的 Phase 5 自检（本任务两类缺陷均逃逸自检、检视期拦截）
+- toolchain_stamp: 设计层规则（无运行时依赖）；证据环境 tilelang 0.1.2+4515de8 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-design/SKILL.md
+- delta: |
+    动作: update（Phase 5 段末追加两条自检）
+    定位锚: "按照 [references/quality-checklist.md](references/quality-checklist.md) 中的自检清单逐项检查，确保文档质量。**所有任务必须通过算法级检查项（算法调研完整（§1.6.0 调研四问齐全、结论有依据）/ 数学等价优化分析完整 / 向量化替代分析完整）**；**迁移任务必须额外通过清单中的迁移专属检查项**（源算子解读完整性 / 耦合性判定有依据 / 重设计有语义保持论证 / §1–§7 与迁移决策一致）。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      上述原文 + 两条新增自检：
+      > **Expert 双域伪代码令牌推演**：对伪代码中每个 `sync_block_set/wait` 做令牌推演（同 id 的 set 序与 wait 序按事件计数逐对配对 + 受保护对象的写发生在 wait 之后的哪个位置），并与引用的 verified 实现行级比对——论证文字正确而伪代码尾置 wait 的脱节形态无法靠通读发现（2026-09-20 ssd 重跑任务 v0 实证：WAR 竞争逃逸 Phase 5、Stage 2 才检出）。
+      > **伪代码形状走查**：对设计自定的 L0 边界用例（非整除 / P_tiles≥2 / 单 tile 退化域）逐一在伪代码上走一遍 copy/gemm 的 src/dst 形状与循环变量绑定——「当前 manifest workload 全整除/全 P=64」的侥幸域会掩盖形状矛盾（同任务 v0：P=128 是自定门禁用例却未走查，形状矛盾逃逸到检视期）。
+    动机: 两类缺陷（协议脱节/形状矛盾）都属「通读自检必然通过、机械推演才暴露」形态；走查域取设计自定的 L0 用例使自检与测试计划同源。与 VP-2026-0029（检视侧维度 5 行）构成设计自检↔检视双防线。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0104
+- type: R
+- title: 修订「写实占位伪代码」对照纪律——写实依据 = 占位符对应 verified 实现的真实形态（逐行比对搬运方向/buffer 数）；写实引入新搬运原语前置三关检查（docs 方向表在列 + examples 先例 + 最小编译探针）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 1 revision_index=2 Skill Flow Issues：v1 修问题 5① 时把 band 组装从占位式（`T.gemm(l1_lcb_band...)`）写实为自创 `T.copy(l1_lcb, l1_band[...])` L1→L1 两跳——方向表无此方向、全仓零先例、检视探针实测硬失败（'Unsupported copy from cbuf to cbuf!'）；旧 verified 实为单 buffer GM→L1 列偏移直载；DESIGN.md v1→v2 §1.4 对比（L347–353 两跳 → 单跳）
+  - 错误谱系：v0 协议/形状缺陷 → v1 写实自创原语 → v2 清零（「写实化」是修订链最后一个高危环节）
+- repro: 复现条件——任一修订轮的「把占位伪代码写实/具体化」动作（本任务该环节引入唯一新阻塞）
+- toolchain_stamp: 设计层规则（无运行时依赖）；证据环境 tilelang 0.1.2+4515de8 / CANN 8.5.0 / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-design/SKILL.md
+- delta: |
+    动作: update（Phase 6 段末追加）
+    定位锚: |
+      ### Phase 6：针对性修订
+
+      仅修正未通过自检的项目。信息确实不足的标注为「待确认」并说明原因。
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      ### Phase 6：针对性修订
+
+      仅修正未通过自检的项目。信息确实不足的标注为「待确认」并说明原因。
+
+      > **「写实占位伪代码」对照纪律**：修订把占位伪代码写实/具体化时，若该占位符对应某个 verified 实现（HEAD 旧终版/先例 kernel），写实的唯一依据是该实现的真实形态——逐行比对搬运方向与 buffer 数，不在「让它更具体」的名义下发明 verified 实现里不存在的结构（两跳/中间 buffer）；写实引入**新搬运原语**时前置三关检查：docs 方向表在列 + 全仓 examples 先例 + 最小编译探针（~1–2 分钟）——任一关不过即回退到 verified 形态（2026-09-20 ssd 重跑任务实证：写实自创 L1→L1 拷贝，探针硬失败，一轮修订白费）。
+    动机: 修订链的「写实化」环节是新增缺陷高发区；三关检查使原语合法性在设计期闭合，不留给检视兜底（同任务检视侧的编译探针手段见 VP-2026-0105）。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0105
+- type: R
+- title: design-review Phase 1 第 4 步补「编译探针」为可选决定性手段——API 可行性争议时编写最小 kernel 仅编译不运行（~1–2 分钟/个），同时探针「设计形态」（证伪）与「建议修复形态」（证可行），使阻塞问题的修改建议自带可行性证明
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 2 复检轮：问题 1 处置全程（探针 1 证伪 L1→L1 两跳、探针 2 证单跳直载可行——修复建议自带编译级证明，Stage 3 零试错）；REVIEW.md（复检轮）机械复核段「编译探针」表；第三轮探针 2 复跑再证（"COMPILED OK"）
+- repro: 复现条件——设计形态无文档/先例佐证的 API 可行性争议（本任务 L1→L1 copy：方向表无此方向 + 全仓零先例）
+- toolchain_stamp: 检视层规则；证据环境 tilelang 0.1.2+4515de8 / CANN 8.5.0 / 2026-09-20
+- target_doc: .agents/skills/tilelang-design-review/SKILL.md
+- delta: |
+    动作: update（Phase 1 第 4 步扩展）
+    定位锚: "4. 必要时 Grep `tilelang/language/` 确认 API 是否有导出佐证（仅静态文本核对，不执行）。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      4. 必要时 Grep `tilelang/language/` 确认 API 是否有导出佐证（仅静态文本核对，不执行）。**编译探针（可选决定性手段）**：设计形态/修复建议无文档与先例佐证、或负向断言需实证时，编写最小 kernel（仅含争议原语，Expert/Developer 按设计模式）**仅编译不运行**（~1–2 分钟/个）——同时探针「设计形态」（证伪）与「建议修复形态」（证可行），使阻塞问题的修改建议自带可行性证明（2026-09-20 ssd 重跑任务实证：探针 1 证伪 L1→L1 拷贝 + 探针 2 证单跳直载可行，修订一轮收敛、Stage 3 零试错；探针代码与报错全文内嵌 REVIEW.md 附录）。
+    动机: 「检视只看文档不编译」使 API 可行性争议只能先例背书或留待 Stage 3 暴露——编译探针把该类争议在检视期闭合。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0106
+- type: R
+- title: design-review Phase 1 补充核对三则——① 同结构多表述位一致性（§1.4/§3.2/§3.3/§6.2/§4.4 平行表述位作为一个核对单元，占位符/写实化位置是重点风险区）② 复杂度表 ws/中继流量按声明形状全维乘积复算（per-task 口径）③ 数字联动核对含标定域外的外推/假设句
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z：① Stage 2 复检轮 Review-method 行（v0 检视只标 §1.4 占位式命名，漏 §3.2 步骤 7 口径矛盾——v1 写实后才暴露为字面结果错误）② Stage 2 first review 问题 4（R3 表 ws 流量 per-l-tile 口径低估 2.5×：87 vs 216MB@w2，独立复算拦截）③ Stage 2 第三轮维度 2 观察项（§4.5「Q=512 → 144KB」外推行漏改〔应为 160KB〕，两轮均未联动——非当前 workload、结论方向不变）
+- repro: 复现条件——任一多章节 DESIGN 检视（三则均本任务三轮实证：字面结果错误 / 2.5× 流量低估 / 外推数字漏改）
+- toolchain_stamp: 检视层规则（无运行时依赖）；证据环境 tilelang 0.1.2+4515de8 / 2026-09-20
+- target_doc: .agents/skills/tilelang-design-review/SKILL.md
+- delta: |
+    动作: update（Phase 1 第 7 步之后追加第 8 步）
+    定位锚: "   - 两项机械结果摘要（含 skip 项）附入 REVIEW.md「机械复核」段——与维度 8 的「独立推演」互补而非替代。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      上述原文 + 新步骤：
+      8. **补充核对三则**（2026-09-20 ssd 重跑任务三轮检视实证）：
+         - **同结构多表述位一致性**：同一结构（协议/搬运/循环）在设计文档的全部平行表述位（§1.4 伪代码 / §3.2 API 映射 / §3.3 / §6.2 循环表 / §4.4 路径图 / §4.5 预算表）作为一个核对单元整体检视——占位符与「写实化」位置是重点风险区（本任务 §3.2 步骤 7 的口径矛盾在 v0 只被读作命名占位，v1 写实后成为字面结果错误）；
+         - **复杂度表流量复算口径**：ws/中继类流量按声明的 ws 形状全维乘积（per-task 口径）复算，不得采信 per-l-tile/per-AIV 局部口径（本任务 R3 表曾低估 2.5×：87 vs 216MB@w2——流量项为地板时会误导 Stage 4 目标）；
+         - **外推/假设句数字联动**：数字联动核对须含标定域外的插值/外推句（grep 容量单位与「→」外推句式——本任务「Q=512 → 144KB」两轮漏改，应为 160KB）。
+    动机: 三则都是「逐维度检视通过、整体对读才暴露」的缺口——第一则曾放过一个字面结果错误到复检轮，后两则靠人工复算拦截。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0107
+- type: R
+- title: develop SKILL 两条——① Phase 3 golden 落盘形态 = 函数体内联 torch 计算（薄包装/别名导入被 S3-GOLDEN-TORCH AST 检查拒绝）② Phase 4 首跑建议 --level L0 单层（逐 shape 可见编译结果，定位后切 all）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 3：① gate 3 报 S3-GOLDEN-TORCH（薄包装 `return ssd_chunk_scan_fwd_ref(...)` 函数体无 torch.* 调用——attempt 1 白耗 742s）；内联仓内参考的 torch 计算（纯 fp32 einsum 双路径 + tril 掩码 materialize 照抄）后 pass: true；② L0 各用例 shape 不同触发多次编译、逐一可见 "AscendNPU IR compile success"（本任务 L0 首跑全绿省去分层二分）
+- repro: 复现条件——① 迁移任务复用仓内参考函数作 golden（`import ... as` 别名与薄包装委托两种形态均被拒）；② 任一多 shape L0 套件首跑
+- toolchain_stamp: tilelang 0.1.2+4515de8 / CANN 8.5.0 / Ascend910B2C / 2026-09-20；gate_lint S3-GOLDEN-TORCH 现行版本
+- target_doc: .agents/skills/tilelang-op-develop/SKILL.md
+- delta: |
+    动作: update（两处）
+    定位锚 1: "2. Golden 必须在 CPU 上可独立运行（不依赖 torch_npu）。"
+    old 文本 1: （即上述定位锚 1 原文）
+    new 文本 1: |
+      2. Golden 必须在 CPU 上可独立运行（不依赖 torch_npu）。
+      3. **golden 函数体必须内联 torch 计算**（迁移任务复用仓内参考函数时的正确落盘）：把参考函数的 torch 计算逐段抄进 `def golden_...` 函数体（函数体直接含 `torch.einsum/tril/exp` 等调用）——`import ... as` 别名或 `return ref(...)` 薄包装的函数体无 torch.* 调用，会被 gate `S3-GOLDEN-TORCH` 的 AST 检查判 fail（2026-09-20 ssd 重跑任务实证：薄包装被拒白耗一次 attempt 742s；内联后语义与参考逐位一致，且无需 sys.path 指向参考目录）。
+    定位锚 2: "1. 跑 L0：`python {op}.py --level L0`。"
+    old 文本 2: （即上述定位锚 2 原文）
+    new 文本 2: |
+      1. 跑 L0：`python {op}.py --level L0`。（Expert 双域 kernel 首跑建议保持单层 L0——各用例 shape 不同会触发多次编译，逐一可见编译结果，定位到具体 shape 的编译失败后再切 `--level all`。）
+    动机: golden 形态是 gate 交互问题（AST 检查只认函数体内的 torch.* 调用，委托形态语义等价也拒）；L0 分层是零成本定位习惯。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0108
+- type: R
+- title: develop SKILL Phase 2 补「迁移重做任务实现基线」——先 `git show HEAD` 取旧 verified 终版（perf_opt/）作结构模板逐行复刻，只做规格差异适配（pass_configs 按新规格 / golden 内联 / 测试套件按新 L0 计划）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 3：实现直接复刻 `git show 4515de8:examples/TileOPs/tileops/kernels/mamba/ssd_chunk_scan/ssd_chunk_scan_kernel/perf_opt/_ssd_chunk_scan_fwd_kernel.py` 完整结构形态 + 三处差异适配——首次编译即通过、零调试往返（L0–Boundary 全绿，比从伪代码重推省 ~90% 时间）；RETROSPECTIVE.md Stage 3 Value Point Proposals 第 3 行 + Transferable 首条（后续 mamba 族未迁移成员直接以该文件为结构模板）
+- repro: 复现条件——迁移重做任务（同 op 旧 verified 终版存在于 git HEAD、工作树副本被 Stage 0 删除）的 Stage 3 实现
+- toolchain_stamp: tilelang 0.1.2+4515de8 / CANN 8.5.0 / Ascend910B2C / 2026-09-20
+- target_doc: .agents/skills/tilelang-op-develop/SKILL.md
+- delta: |
+    动作: update（Phase 2 清单追加第 4 项）
+    定位锚: "3. 遵循项目根 AGENTS.md："不要凭记忆猜 API"、"从示例入手"——先 Glob `examples/` 同类实现参考。"
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+      3. 遵循项目根 AGENTS.md："不要凭记忆猜 API"、"从示例入手"——先 Glob `examples/` 同类实现参考。
+      4. **迁移重做任务**（同 op 旧 verified 终版在 git HEAD、Stage 0 已删工作树副本）：实现基线 = `git show HEAD:<旧 perf_opt 终版路径>` 的完整结构逐行复刻（每个搬运方向/flag 置位/slice 裁剪已在旧工具链实证），只做规格差异适配——pass_configs 按新 DESIGN 规格、golden 内联仓内参考、测试套件按新 L0 计划扩充；从伪代码重推是下策（2026-09-20 ssd 重跑任务实证：复刻 + 三处适配首编即过零调试往返，省 ~90% 时间）。
+    动机: 重做任务的最大红利是旧 verified 实现（结构层每个 API 形态已验证）——不取用即放弃；差异适配清单使复刻不退化为盲抄（规格演进点显式处理）。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0109
+- type: R
+- title: integrate_kernel.py rewrite_wrapper_import 同步清理被替换 import 正上方的「Part A 提取说明」陈旧注释——避免描述已死 import 的注释误导后续维护者
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z Stage 5：examples/TileOPs/tileops/kernels/mamba/ssd_chunk_scan/ssd_chunk_scan.py L56–L58（"# Part A: GPU TileLang kernel factory extracted by extract_tl_kernel.py / # (pattern B) from {gpu_repo_root}/... / # ---" 注释块保留在 baseline/perf_opt 选择块之上，描述的是已被替换的 GPU 提取 import——且 {gpu_repo_root} 占位符未填充）；op 级 RETROSPECTIVE.md Stage 5 Skill Flow Issues 首行
+- repro: 复现条件——任一 wrapper 带脚手架提取说明注释的集成（rewrite_wrapper_import 替换 import 后注释残留）
+- toolchain_stamp: tilelang 0.1.2+ubuntu.22.4.npuir / 2026-09-20；脚本现行版本
+- target_doc: examples/TileOPs/.agents/skills/add-npu-op/scripts/integrate_kernel.py
+- delta: |
+    动作: update（rewrite_wrapper_import 拼接处追加注释清理）
+    定位锚: |
+      (rewrite_wrapper_import 函数体内)
+          block = gen_kernel_source_block(names, integrated_files, op_slug)
+          text = text[: m.start()] + block + text[m.end() :]
+          wrapper_path.write_text(text, encoding="utf-8")
+    old 文本: |
+          block = gen_kernel_source_block(names, integrated_files, op_slug)
+          text = text[: m.start()] + block + text[m.end() :]
+          wrapper_path.write_text(text, encoding="utf-8")
+    new 文本: |
+          block = gen_kernel_source_block(names, integrated_files, op_slug)
+          # Drop the stale "Part A: ... extracted ..." comment block sitting
+          # directly above the replaced import: it documents the dead
+          # GPU-extraction import (with unfilled {gpu_repo_root} placeholders)
+          # and misleads maintainers after the swap (2026-09-20 ssd case).
+          pre = text[: m.start()].rstrip("\n")
+          part_a = re.search(r"\n(?:#[^\n]*\n)+$", pre)
+          if part_a and "extracted" in part_a.group(0):
+              pre = pre[: part_a.start()].rstrip("\n") + "\n\n"
+          text = pre + block + text[m.end() :]
+          wrapper_path.write_text(text, encoding="utf-8")
+    动机: 脚手架生成的提取说明注释在 import 被替换后成为死文档；重跑/换代集成时该注释与新的 baseline/perf_opt 切换块并排出现，误导 wrapper 维护者（该文件是 wrapper 胶水的唯一权威说明位）。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260920T122332Z 2026-09-20
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0111
+- type: R
+- title: iteration-diagnosis.md Step 2「代码结构观察」补机械互证检查——继承的段数/流量记账须做「引擎指令数 ÷ 任务数」与 kernel 拷贝语句清单逐项对照（指令数是装载冗余的直接探测器，比散文记账可靠）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z：opt_log.md §1 末节（Phase 1 代码结构新发现：prev_states 切片对 lt 无依赖却在 lt 循环体内 ⟹ Q=256 时 4× 重读 = 48KB/任务冗余 = Cube mte2 字节 20%；实测 19.0 指令/任务 = 1(x)+Σ_lt[1(ws_c)+1(prev)+(lt+1)(band)] 与代码结构精确互证）
+  - 误判代价实证：旧任务（1990aa9fe4 谱系）两套段数拆分共同漏算 ×4（「1216 段不可减」的地板定位错误），本轮据此再挖出几何 1.078× 中的第一项（prevhoist −2.0~−3.4%）；constants.md CONST-mte2 段数更正注 + attention.md PL-1.18 update①（2026-09-21 已回写）
+  - .task_timeline.jsonl（Stage 4 无 fail 于该项——发现靠 optimizer 自发代码结构核对，非流程强制；Skill Retrospective Skill Flow Issues 首行自评「旧档数字未被要求做代码结构级互证」）
+- repro: python3 .agents/tools/kb_search.py "mte2 段数 指令数 互证"（数据侧落点：constants.md CONST-mte2 / attention.md PL-1.18）
+- toolchain_stamp: tilelang 0.1.2+15ad002b3d（与 4515de8 同源）/ CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/iteration-diagnosis.md
+- delta: |
+    动作: update（「### 代码结构观察」bullet 列表末条之后追加一条）
+    定位锚: "- 冗余访问：是否有中间结果写回 GM 后又读回，或重复读取同一批 GM 数据。"
+    old 文本: |
+      - 冗余访问：是否有中间结果写回 GM 后又读回，或重复读取同一批 GM 数据。
+    new 文本: |
+      - 冗余访问：是否有中间结果写回 GM 后又读回，或重复读取同一批 GM 数据。
+      - 装载冗余互证（含继承数字）：对每个搬运引擎把「指令数（如 aic_mte2_instructions）÷ 每核任务数」与 kernel 内拷贝语句清单逐项对照——每条 T.copy 对应一条指令，对不上即有漏算/冗余；逐维核对循环体内张量索引的循环不变性（索引不含某循环变量 ⟺ 该装载可提升出该循环）。从旧档/前轮继承的段数/流量记账在用于地板定位前必须过此互证（2026-09-21 ssd 实证：两套旧拆分共同漏算 prev ×4 重读，致「1216 段不可减」错误地板定位跨任务存活，指令数互证一轮发现 20% 可削字节）。
+    动机: 散文式段数记账不可机械复核，错误记账一旦进入「继承裁决」链就跨任务存活并封死候选方向；指令数是 msprof 直接给出的机械计数，与代码结构一一对应——把互证设为 Step 2 标准动作可在首轮 profile 即发现记账盲区，而不是依赖 optimizer 自发核对。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0112
+- type: R
+- title: iteration-diagnosis.md「已知迭代结论」节补注——引擎临界性是动态量，「引擎 X 非关键」类结论每轮 winner 合并后须重算（AIV「非关键」在两轮 Cube 优化后失效、w2 转 AIV-bound）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z：opt_log.md R2→R4 约束迁移链（prevhoist+l0c2x 后 w2 任务周期 6.58µs vs Cube mte2 busy 4.45µs/任务 ⟹ AIV-bound；vbrchoist 据此立项获益 −3.45%）+ Skill Retrospective Skill Flow Issues 第 2 行（「AIV『非关键路径』结论会随 Cube 侧优化失效」）
+  - 知识侧姊妹条目：queue VP-2026-0110（BP_engine_criticality_drift，Tier 1——方法本体与判据；本条为流程侧每轮强制重算规则，两案合入时互链）
+  - 〔2026-09-21 重建会话同谱系追加（不计确认），task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z〕方向翻转级证据：vbrchoist 单点 H=80 族回退（−4.2~−6.7%）在 prevhoist 合入后消失（+2.2~+10.2%）——单点结论依赖 base 状态的更强形态（数据侧 attention.md PL-1.18 update②）；**建议 apply 时在同节邻位增补「累积序检验」一句**：与先验证据矛盾的 workload 族分裂先合入对侧已验证胜出复测、再谈 per-shape 条件路径（姊妹 BP 提案 VP-2026-0115，合入时互链）
+- repro: none（流程规则；核算方法与实证数据自包含于 VP-2026-0110 delta 与 attention.md PL-1.18 update③）
+- toolchain_stamp: tilelang 0.1.2+15ad002b3d（与 4515de8 同源）/ CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/iteration-diagnosis.md
+- delta: |
+    动作: update（「### 已知迭代结论」text block 之后追加一段）
+    定位锚: |
+      本轮 profile 相比上一轮 profile 哪些指标发生变化
+      ```
+    old 文本: |
+      本轮 profile 相比上一轮 profile 哪些指标发生变化
+      ```
+    new 文本: |
+      本轮 profile 相比上一轮 profile 哪些指标发生变化
+      ```
+
+      **引擎临界性是动态量（2026-09-21 ssd 实证）**：双引擎（Cube+Vector）kernel 的「引擎 X 非关键路径」结论只对当时的结构状态有效——每轮 winner 合并后须重算逐 workload 的「任务周期（Task Duration ÷ 每核任务数）vs 各引擎 per-task busy」核算，临界性反转时重启此前因「非关键」被否决的对侧候选（ssd：AIV「非关键」在两轮 Cube 优化后失效，w2 转 AIV-bound，Vector 侧 hoist 重新获益 −3.5%）。重算方法与判据见 bottleneck-patterns.md BP_engine_criticality_drift。
+    动机: 旧结论按字面继承会把「当前非关键」固化为「永远非关键」，直接封死对侧候选池；重算成本是一次除法对照，收益是整轮优化方向（本任务 vbrchoist 即靠该核算立项）。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0113
+- type: R
+- title: ab_test 交错协议判读规则——3-pair 符号检验统计功效不足（3/3 同向仍 p=0.25 判 tie），采纳判据 = 配对方向一致 + 机制佐证（资源占用严格更优），临界情形 --pairs 5 复测
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z：opt_log R1 ab_test（ab_round1_w4：3/3 pair 一致 −2.85/−2.27/−3.02%，合并 −2.84%，verdict 仍 tie——p=0.25 为 3-pair 符号检验固有功效上限）+ R4（ab_round4_w2：3/3 一致 −2.97% 同判 tie）+ R2（ab_round2_w3：B_better 3/3 −3.0~−4.0% 合并 −3.97%——幅度够大时协议能判）
+  - 本任务正确采纳路径：靠 iteration-diagnosis.md Step 6 既有「资源占用决胜」规则 + 机制佐证（mte2 指令 19→16/任务、Cube mte2 字节 −20%、busy 3289→2913µs −11.4%）采纳 prevhoist——判据形态有效但未在 T-2 协议条成文，本轮为自发正确应用
+  - 工具侧查重确认：`.agents/tools/ab_test.py` 已支持 `--pairs`（L108，默认 3）——缺口在判读协议文档，非工具
+- repro: python3 .agents/tools/ab_test.py --a <baseline> --b <candidate> --pairs 5 ...（工具现成；复现条件 = 任一 <5% 增益的 3-pair 交错协议输出 tie 而 pair 方向全一致）
+- toolchain_stamp: tilelang 0.1.2+15ad002b3d（与 4515de8 同源）/ CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/iteration-diagnosis.md
+- delta: |
+    动作: update（Step 6 交错 A/B 协议 bullet 末尾追加判读规则）
+    定位锚: "工具化执行：`python3 .agents/tools/ab_test.py --a <baseline_kernel> --b <candidate_kernel> ...`（交错多 run + 合并中位差 + 配对方向一致性判定）。"
+    old 文本: |
+      工具化执行：`python3 .agents/tools/ab_test.py --a <baseline_kernel> --b <candidate_kernel> ...`（交错多 run + 合并中位差 + 配对方向一致性判定）。
+    new 文本: |
+      工具化执行：`python3 .agents/tools/ab_test.py --a <baseline_kernel> --b <candidate_kernel> ...`（交错多 run + 合并中位差 + 配对方向一致性判定）。**判读规则（2026-09-21 ssd 实证）**：3-pair 符号检验的统计功效上限 p=0.25——**3/3 配对同向仍判 tie 是协议固有，不是「无差异」证据**（两例：3/3 一致 −2.84% / −2.97% 均判 tie）；此形态的采纳判据 = ① 配对方向全一致（≥3/3 同向）**且** ② 机制佐证独立成立（资源占用严格更优：指令数/忙比/字节数等机制性削减指标，与 Task Duration 无关的计数）——两条件同时满足可采纳（本任务 prevhoist：pair 全同向 + mte2 指令 19→16/任务 + busy −11.4%）；仅方向一致而无机制佐证时用 `--pairs 5` 复测提高功效，不得据 3-pair tie 丢弃。
+    动机: tie 判定若无配套采纳规则，3/3 同向的真增益会被当噪声丢弃（或反之被主观采纳）——机制佐证把「统计上未决」转化为「机制上可判」，且佐证指标（指令数/字节）不受 run 双态噪声影响。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0114
+- type: R
+- title: signal-registry.md §5 S4 产物格式契约显式化——perf_records final 的 artifact_path 以 perf_opt/ 为基准（裸文件名），Final Performance Test Data 表为 ##/### 标题 + 恰 5 列纯数字（gate 4 机械解析形态）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z：.task_timeline.jsonl（Stage 4 attempt 1 fail 7681s，verdict=runtime，2026-09-21T02:43:32Z——gate 4 S4-PERF-RECORDS-RECON 对账失败；attempt 2 窄修复 complete 170s）——失败细节来自 conductor 终态钩子输入，opt_log §7 复盘未覆盖该次 fail 的 gate 侧原因（复盘缺口形态，同 stats ⑧⑩ 先例）
+  - 两处产物格式错误（attempt 1）：① perf_records.jsonl final 记录 artifact_path 用仓库根相对路径（examples/TileOPs/... 前缀），gate 以 perf_records.jsonl 所在目录（perf_opt/）为基准拼接成双重前缀 → abspath 不匹配 → 「final 未测最终 perf_opt 文件」；② opt_log Final Performance Test Data 用加粗列表项而非 ##/### 标题 + 6 列且数值加粗——gate_lint.py L908 要求 `^#{2,3} Final Performance Test Data\s*$` 标题、L919 要求恰 5 列、L925 要求 float() 可解析（加粗 → ValueError / 6 列 → 行被跳过 → 「Final 表缺少 {key}」）
+  - 修复形态（attempt 2，170s）：final 行 artifact_path = 裸文件名 `_ssd_chunk_scan_fwd_kernel.py`（perf_records.jsonl 末 3 行）+ opt_log §6 `### Final Performance Test Data` + 5 列纯数字表
+  - .agents/tools/gate_lint.py L882-884（相对路径 join dirname(records_path)）/ L908-927（标题正则 + 5 列 + float 解析）；现行 signal-registry.md §5 已列 5 列字段名但未写标题层级/纯数字/路径基准三要素
+- repro: python3 .agents/tools/gate_lint.py（现行 S4-PERF-RECORDS-RECON 规则；负例 = final 行 artifact_path 带仓库根前缀 + Final 表加粗 6 列形态，正例 = 本任务 attempt 2 修复后产物）
+- toolchain_stamp: gate_lint.py 现行版本（statectl gate 4 机械核对层）；发生环境 tilelang 0.1.2+15ad002b3d / CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/skills/_shared/standards/signal-registry.md
+- delta: |
+    动作: update（§5 字段契约段扩展一句）
+    定位锚: "`phase` 为 `baseline` / `candidate` / `merged` / `final`。`artifact_path` 指向实际测量的候选 kernel 文件，`artifact_sha256` 是采集时该文件的 SHA256；final 记录的路径和哈希须与最终 `perf_opt/{op}.py` 一致。"
+    old 文本: |
+      `phase` 为 `baseline` / `candidate` / `merged` / `final`。`artifact_path` 指向实际测量的候选 kernel 文件，`artifact_sha256` 是采集时该文件的 SHA256；final 记录的路径和哈希须与最终 `perf_opt/{op}.py` 一致。
+    new 文本: |
+      `phase` 为 `baseline` / `candidate` / `merged` / `final`。`artifact_path` 指向实际测量的候选 kernel 文件，`artifact_sha256` 是采集时该文件的 SHA256；final 记录的路径和哈希须与最终 `perf_opt/{op}.py` 一致。**`artifact_path` 相对基准 = `perf_records.jsonl` 所在目录（`perf_opt/`）——final 记录写裸文件名 `{op}.py`，仓库根相对路径会被 gate 以 `perf_opt/` 为基准拼接成双重前缀而判「final 未测最终 perf_opt 文件」（2026-09-21 ssd 二轮调优实证：Stage 4 attempt 1 整轮 gate 对账失败重试）**。Final Performance Test Data 表的机械解析形态：`##`/`###` 标题行 + 恰 5 列 `| kernel_id | workload_id | baseline_us | final_us | final_candidate_id |`，时延列为纯数字（不加粗、不用列表项替代表格行——6 列或加粗数值均使 gate 4 `S4-PERF-RECORDS-RECON` 解析失败或跳行）。
+    动机: 契约的字段名已成文但「路径基准 / 标题层级 / 纯数字」三个 gate 解析要素未写——首轮按直觉写仓库根相对路径与富文本表格会整轮 gate 失败（本任务 7681s attempt 的收尾对账失败 + 170s 窄修复 + 一次 stage_retry；与 VP-2026-0036 的 null/手抄亚型同属 S4-PERF-RECORDS 产物契约违例家族，第三亚型）。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T003531Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0116
+- type: R
+- title: kb_stale_check.py 的 stamp diff 过滤非源码路径——repo HEAD（含 .agents/docs 知识库 commit）被当作 tilelang 工具链戳产生全库假阳性（stale_count=125，实际 tilelang 源码零改动）
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z：opt_log.md §0 E-5 段（启动时 kb_stale_check 报 stale_count=125 几乎全库，本 kernel 直接相关条目全部标「待重验」——五项结构否决的 carry-over 论证本可直接成立，被迫逐条 git diff 自证）+ Skill Retrospective Skill Flow Issues 第 2 行
+  - 机械复核（2026-09-21 蒸馏会话）：`git diff --stat 15ad002..96f287e` = 7 个文件全部位于 .agents/（queue/stats/INDEX/attention/cases/constants/repro——evolution commit），tilelang/ 源码零改动；kb_stale_check 现跑 stale_count=124——假阳性复现
+  - 根因：.agents/tools/kb_stale_check.py detect_current_stamp() 以 `git rev-parse --short=10 HEAD`（repo HEAD）为 tilelang_commit——知识库文档 commit 也推进 HEAD，使全部旧工具链戳条目批量失配
+  - 交叉引用：queue VP-2026-0089（消费侧口径——全局 stale_count 不作单条目判定依据，已三现）/ VP-2026-0101（消费侧两分法）——本条为工具侧根因修复，三案互补建议同批审批
+- repro: python3 .agents/tools/kb_stale_check.py（观察 stale_count）；git diff --stat 15ad002..96f287e（docs-only delta 复现命令——两相对照即假阳性证据）
+- toolchain_stamp: kb_stale_check.py 现行版本；发生环境 tilelang 0.1.2+96f287eeaa / CANN 8.5.0 / Ascend910B2C / 2026-09-21
+- target_doc: .agents/tools/kb_stale_check.py
+- delta: |
+    动作: update（detect_current_stamp 的 HEAD 查询替换为源码树过滤查询）
+    定位锚: |
+      (detect_current_stamp 函数体内)
+          try:
+              head = subprocess.run(
+                  ["git", "rev-parse", "--short=10", "HEAD"],
+                  cwd=REPO_ROOT,
+                  capture_output=True,
+                  text=True,
+                  timeout=10,
+              )
+              if head.returncode == 0:
+                  stamp["tilelang_commit"] = head.stdout.strip()
+          except Exception:  # noqa: BLE001 -- advisory tool
+              pass
+    old 文本: （即上述定位锚原文）
+    new 文本: |
+          try:
+              # The stamp must track the tilelang SOURCE tree, not repo HEAD:
+              # knowledge-base/doc-only commits (.agents/, docs/, examples/)
+              # also advance HEAD and would flip the stamp, producing
+              # whole-library false positives (2026-09-21 ssd rebuild task:
+              # stale_count=125 while `git diff --stat 15ad002..96f287e`
+              # showed 7 .agents files and zero tilelang source changes).
+              head = subprocess.run(
+                  [
+                      "git", "log", "-1", "--format=%h",
+                      "--",
+                      "tilelang/", "src/", "tilelangir/", "3rdparty/",
+                      "pyproject.toml", "CMakeLists.txt",
+                  ],
+                  cwd=REPO_ROOT,
+                  capture_output=True,
+                  text=True,
+                  timeout=10,
+              )
+              if head.returncode == 0 and head.stdout.strip():
+                  stamp["tilelang_commit"] = head.stdout.strip()
+          except Exception:  # noqa: BLE001 -- advisory tool
+              pass
+    动机: stale 检测的语义是「tilelang 行为可能变了」；文档 commit 不改变编译器行为，却使每次蒸馏后的全库条目批量假阳性——optimizer Phase 0 被迫逐条 git diff 自证（本任务实证），或更糟：照单全收「待重验」清单浪费调优预算。源码树过滤（tilelang/ src/ tilelangir/ 3rdparty/ + 构建文件——路径集 apply 时可复核增删）使 stamp 只随真实工具链变更推进。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 2026-09-21
+- decided_by: -
+- decided_note: -
+
+## VP-2026-0117
+- type: R
+- title: conductor 终态钩子前置「任务产物保全」步骤——DONE 前对算子目录未提交产物做零工作树影响的 git 保全（临时索引 write-tree + update-ref），防 perf_opt 外部删除致算子断裂与调优档案永久丢失
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z：opt_log.md 任务背景（上一调优会话〔task ...20260921T003531Z〕DONE 后 perf_opt/ 目录被外部删除——wrapper 指向 perf_opt 导致算子断裂；14 个实验分支 + 64 行 perf_records 永久丢失）+ Skill Retrospective Skill Flow Issues 第 3 行 + 重建全程（本会话 mode=full 重建耗 10413s，靠 repro/PL-1.18-floor2-wins.py 骨架才恢复三胜出结构——实验数据与 opt_log 不可恢复）
+  - 既有机制缺口：statectl `complete` 的「工件 SHA256 快照」只记哈希不保内容（.stage_state.json artifact_hashes——目录删除后无法恢复）；perf_opt/ 未提交文件在 git 工作区无任何恢复途径
+  - 数据侧互补：attention.md PL-1.18 update①（repro 骨架自包含性经工件全失场景检验——ED-A/ED-B 的正反面实证：结构可由骨架重推导，过程数据全失）
+- repro: 复现条件——任一 DONE 后算子目录 perf_opt/ 被外部删除（wrapper 断裂 + 档案丢失；恢复路径仅 repro 骨架重推导，实验记录不可恢复）
+- toolchain_stamp: 会话层工作流（无运行时依赖）；发生环境 2026-09-21（git 仓可用）
+- target_doc: .opencode/agents/tilelang-op-conductor.md
+- delta: |
+    动作: update（「### 1. 任务终态蒸馏钩子（必执行）」步骤列表前插入第 0 步）
+    定位锚: |
+      `phase` 进入 `DONE` 或 `FAILED` 后（最终报告输出后、同一会话内）：
+
+      1. 判断是否存在**可蒸馏信号**（任一为真即有）：
+    old 文本: （即上述定位锚原文——intro 行 + 步骤 1 起始行）
+    new 文本: |
+      `phase` 进入 `DONE` 或 `FAILED` 后（最终报告输出后、同一会话内）：
+
+      0. **任务产物保全（零工作树影响，best-effort）**：对任务算子目录的未提交产物（`perf_opt/` 全部文件、`history_version/`、`integration_log.md` 等）执行 git 保全——`idx=$(mktemp); GIT_INDEX_FILE=$idx git read-tree HEAD; GIT_INDEX_FILE=$idx git add -- <算子目录>; tree=$(GIT_INDEX_FILE=$idx git write-tree); commit=$(git commit-tree $tree -p HEAD -m "task artifacts: {task_id}"); git update-ref refs/task-artifacts/{task_id} $commit; rm -f $idx`（分支头与工作树均不动；恢复 = `git checkout refs/task-artifacts/{task_id} -- <算子目录>`）。失败不阻塞、不重试，记录到最终报告。动机：上一会话 DONE 后 perf_opt/ 被外部删除致 wrapper 断裂 + 14 实验分支/64 行 records 永久丢失（2026-09-21 ssd 重建任务实证——重建耗整个会话且实验数据不可恢复；statectl SHA256 快照只记哈希不保内容）。
+      1. 判断是否存在**可蒸馏信号**（任一为真即有）：
+    动机: 调优产物是后续蒸馏/续调/断裂修复的唯一载体；「wrapper 指向 perf_opt + 目录可被外部删除 + 内容无 git 保全」三条件叠加使每个 DONE 任务暴露于不可恢复损失——零工作树影响的 ref 保全把恢复成本从「整个重建会话」降到一条 checkout 命令。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 2026-09-21
+- decided_by: -
+- decided_note: 备选实现（apply 时可裁决）：① statectl `complete` 内置同构保全（工具侧，需改 .agents/tools/statectl.py——机械动作更可靠）；② optimize SKILL.md Phase 4 交付清单加「提示用户 commit perf_opt/」提醒（最轻量）。三形态取一即可。
+
+## VP-2026-0118
+- type: R
+- title: profile-collection.md 补长采集后台运行形态——`cd X && nohup ... &` 的 `&` 作用于整链，调用方 shell 工具超时 SIGKILL 连带杀死采集进程组；须 setsid 脱离进程组启动
+- evidence:
+  - task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z：opt_log.md §2 注（perf_records.jsonl 前三行为启动事故——首次后台 baseline 采集被 shell 超时连带杀死前已落 3 行，重启后重测同三案例产生同分布重复记录，append-only 契约下须逐行注记对账）+ Skill Retrospective Skill Flow Issues 第 5 行 + perf_opt/logs/phase1_baseline_all.log（首次启动事故日志）
+- repro: 复现条件——以 `cd <dir> && nohup <采集命令> > log 2>&1 &` 形态从带超时的 shell 工具启动分钟级采集，超时触发后观察采集进程被连带 SIGKILL（对照 setsid 形态存活）
+- toolchain_stamp: 会话层工作流（无运行时依赖）；发生环境 2026-09-21
+- target_doc: .agents/skills/tilelang-op-optimize/references/profile-collection.md
+- delta: |
+    动作: update（§3 串行运行 msprof op 的注意事项后追加一段）
+    定位锚: "注意：`msprof op` 多 launch 稳定性需要靠多次独立运行，不要用 CSV 记录条数推断实际 launch 次数。"
+    old 文本: |
+      注意：`msprof op` 多 launch 稳定性需要靠多次独立运行，不要用 CSV 记录条数推断实际 launch 次数。
+    new 文本: |
+      注意：`msprof op` 多 launch 稳定性需要靠多次独立运行，不要用 CSV 记录条数推断实际 launch 次数。
+
+      长采集（全 workload baseline 扫描等分钟级任务）以后台方式运行时，用 `setsid` 脱离当前 shell 的进程组启动（`setsid nohup bash -c '<采集命令>' > {log} 2>&1 &`）——`cd X && nohup ... &` 形态中 `&` 作用于整条链，调用方 shell 工具超时的 SIGKILL 会连带杀死采集进程组，产出半途记录（2026-09-21 ssd 重建任务实证：首次 baseline 采集即被连带杀死、重启后 3 行同分布重复记录，append-only 契约下须逐行注记对账）。
+    动机: 采集被中途杀死产生两类成本：半途记录污染 append-only 对账（须注记区分）+ 整轮重采；setsid 是零成本进程组隔离。
+- status: pending
+- confirmations: -/-
+- created_by: task ssd_chunk_scan-_ssd_chunk_scan_fwd_kernel-20260921T120526Z 2026-09-21
 - decided_by: -
 - decided_note: -
 

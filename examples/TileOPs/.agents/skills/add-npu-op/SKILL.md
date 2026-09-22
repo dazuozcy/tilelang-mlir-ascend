@@ -440,10 +440,22 @@ in Phase 0 via `source.test`, under `{gpu_repo_root}/tests/ops/`).
 
 Create `benchmarks/ops/bench_{op_slug}.py`.
 
-**Port from GPU**: Copy the benchmark function from the GPU bench file
-(identified in Phase 0 via `source.bench`, under `{gpu_repo_root}/benchmarks/ops/`).
+**Port from GPU**: Use the benchmark function in the GPU bench file
+(identified in Phase 0 via `source.bench`, under `{gpu_repo_root}/benchmarks/ops/`)
+to migrate this operator's workloads and performance measurements.
 
-- **Preserve**: parametrization logic, baseline function, recording calls.
+- **Preserve**: parametrization, input generation, the TileOPs measurement and
+  recording calls, and any independent performance baseline that is meaningful
+  and runnable on NPU.
+- **Do not benchmark accuracy-only golden/reference implementations** (for
+  example, a handwritten PyTorch `ref_program` used solely for correctness
+  comparison). Keep those references in the correctness tests; omit their
+  `bm.profile(...)` and `BenchmarkReport.record(...)` calls from the NPU
+  benchmark entirely, rather than leaving commented-out code.
+- Classify a baseline by its purpose, not by whether it uses PyTorch or has a
+  `torch` tag: a native operator such as `F.mish` can be a performance
+  baseline, whereas `ssd_chunk_scan_fwd_ref` from `tileops.testing` is an
+  accuracy reference.
 - **Apply T3-T4** from the Standard NPU Adaptations section.
 
 **Single-input vs multi-input parametrization**:
@@ -516,22 +528,21 @@ prompts are emitted in the Output Prompt step.
 
 #### Tier 2 — Runtime verification (after NPU kernel component rewrites kernels for NPUIR)
 
-Once the kernel functions are reimplemented for `target="npuir"` by the
-NPU kernel component, run:
+Once the kernel functions are reimplemented for `target="npuir"` and
+integrated into the TileOPs wrapper, run from the TileOPs project root
+(`examples/TileOPs/` in this repository):
 
 ```bash
-# 1. Correctness tests (smoke only first)
-python -m pytest tests/ops/test_{op_slug}.py -v -m smoke --tb=short
-
-# 2. Full test suite
-python -m pytest tests/ops/test_{op_slug}.py -v --tb=short
-
-# 3. Benchmarks
-python -m pytest benchmarks/ops/bench_{op_slug}.py -v --tb=short
+python -m tileops.reporting.cli run --op {op_name} --prof-mode msprof
 ```
 
-All tests must pass. Common runtime failure causes (for the NPU kernel
-component to address):
+Use the PascalCase manifest key `{op_name}`, not `{op_slug}`. The report
+runs the full correctness suite, then the operator benchmark if correctness
+passes. Read this run's `run.json` and `report.md`; a `partial` report
+means correctness passed but benchmark data failed or was invalid, and the CLI
+may return nonzero for that reason. Correctness must pass; benchmark issues
+are reported without repairing the kernel for performance alone. Common
+runtime correctness failure causes (for the NPU kernel component to address):
 
 - **fp16/bf16 tolerance**: if the kernel computes in the input dtype and
   the reference upcasts to fp32, precision may differ. Fix by adding fp32
